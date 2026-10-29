@@ -1,0 +1,14 @@
+{
+  "name": "project-os-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "new-project": "node scripts/new-project.mjs",
+    "check-project": "node scripts/check-project.mjs"
+  }
+}

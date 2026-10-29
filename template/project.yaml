@@ -1,0 +1,44 @@
+# Project OS project manifest. Checked by project-os-core/scripts/check-project.mjs.
+core:
+  repository: luantran069/project-os-core
+  version: __CORE_VERSION__
+
+project:
+  name: __PROJECT_NAME__
+  repository: __REPO__
+  owner: __OWNER__
+  created: __DATE__
+
+tracker:
+  kind: jira
+  project_key: __TRACKER_KEY__
+
+runtime:
+  orchestrator: symphony
+  agent: codex
+  max_concurrent_agents: 1
+  max_turns: 8
+
+# Label names on the tracker. Defaults match good-ideas.
+labels:
+  idea: symphony-idea
+  plan: symphony-plan
+  ready: symphony-ready
+  blocked: symphony-blocked
+  human_review: symphony-human-review
+  pilot_review: symphony-pilot-review
+
+# Autonomy: L0 suggest, L1 ask first, L2 act then report, L3 automatic.
+modules:
+  assess: { enabled: false, autonomy: L0 }
+  build: { enabled: true, autonomy: L1 }
+  deploy: { enabled: false, autonomy: L1 }
+  marketing: { enabled: false, autonomy: L0 }
+  analytics: { enabled: false, autonomy: L0 }
+
+gates:
+  release: required # required | auto
+  public_content: required # always required
+
+budget:
+  monthly_usd: null # set before raising concurrency
