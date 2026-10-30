@@ -1,0 +1,10 @@
+{
+  "repository": "openai/symphony",
+  "version": "v0.0.3",
+  "sha256": {
+    "linux_arm64": "bf204639b836d378f5d2ddb389f5d76602a62e9d1b115bdbefb07916848ae066",
+    "linux_x86_64": "ea35a04a54a6d37c0cafe3f195da871e47614a8c05765b90dbb4cac32e1435ee",
+    "macos_arm64": "b85d78b25cd5cacff92424416f6a3af7cafee5d675f56b5cd26d22d601c2026d",
+    "macos_x86_64": "e7db24d8b35d99a96b96db51e50c7974ab9a8ae06fd05abf6d03ead6bf183d90"
+  }
+}

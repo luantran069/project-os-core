@@ -3,16 +3,22 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { checkProject, readYamlValue } from "../scripts/check-project.mjs";
+import { parse } from "yaml";
+import { checkWorkflow } from "../symphony/check.mjs";
+import { checkProject } from "../scripts/check-project.mjs";
 import { createProject } from "../scripts/new-project.mjs";
+import { syncProject, vendorPath } from "../scripts/sync-project.mjs";
 
 const options = {
-  name: "Demo App",
+  name: "Demo Ứng Dụng",
   repo: "example/demo-app",
   trackerKey: "DA",
   owner: "Example Owner",
   date: "2026-10-29",
 };
+const version = (
+  await readFile(new URL("../VERSION", import.meta.url), "utf8")
+).trim();
 
 async function withProject(run) {
   const root = await mkdtemp(join(tmpdir(), "project-os-"));
@@ -25,17 +31,33 @@ async function withProject(run) {
   }
 }
 
-test("a new project fills every placeholder and passes the check", () =>
+const edit = async (path, change) =>
+  writeFile(path, change(await readFile(path, "utf8")));
+
+test("a new project fills every placeholder, vendors Symphony and passes the check", () =>
   withProject(async (target) => {
-    const manifest = await readFile(join(target, "project.yaml"), "utf8");
-    const version = (
-      await readFile(new URL("../VERSION", import.meta.url), "utf8")
-    ).trim();
-    assert.equal(readYamlValue(manifest, "core", "version"), version);
-    assert.equal(readYamlValue(manifest, "tracker", "project_key"), "DA");
+    const manifest = parse(
+      await readFile(join(target, "project.yaml"), "utf8"),
+    );
+    assert.equal(manifest.core.version, version);
+    assert.equal(manifest.tracker.project_key, "DA");
+    const pkg = JSON.parse(
+      await readFile(join(target, "package.json"), "utf8"),
+    );
+    assert.equal(pkg.name, "demo-ung-dung");
     const workflow = await readFile(join(target, "WORKFLOW.md"), "utf8");
     assert.match(workflow, /git@github.com:example\/demo-app.git/);
     assert.match(workflow, /\{\{ issue.identifier \}\}/);
+    const pin = JSON.parse(
+      await readFile(join(target, ".project-os/core.json"), "utf8"),
+    );
+    assert.equal(pin.version, version);
+    assert.ok(`${vendorPath}/codex.mjs` in pin.files);
+    assert.equal(
+      await readFile(join(target, vendorPath, "check.mjs"), "utf8"),
+      await readFile(new URL("../symphony/check.mjs", import.meta.url), "utf8"),
+    );
+    await checkWorkflow(false, target);
     const { errors, warnings } = await checkProject(target);
     assert.deepEqual(errors, []);
     assert.ok(warnings.some((w) => w.includes("TODO(owner)")));
@@ -59,11 +81,8 @@ test("invalid options are refused", async () => {
 
 test("the check reports a missing file, a newer core and a label mismatch", () =>
   withProject(async (target) => {
-    const manifestPath = join(target, "project.yaml");
-    const manifest = await readFile(manifestPath, "utf8");
-    await writeFile(
-      manifestPath,
-      manifest
+    await edit(join(target, "project.yaml"), (text) =>
+      text
         .replace(/version: .*/, "version: 99.0.0")
         .replace("ready: symphony-ready", "ready: os-ready"),
     );
@@ -87,4 +106,50 @@ test("leftover placeholders are errors", () =>
         (e) => e.includes("memory/state.md") && e.includes("__OWNER__"),
       ),
     );
+  }));
+
+test("a locally edited Symphony file fails the check until the project is synced again", () =>
+  withProject(async (target) => {
+    await edit(
+      join(target, vendorPath, "codex.mjs"),
+      (text) => `${text}\n// local`,
+    );
+    const { errors } = await checkProject(target);
+    assert.ok(errors.some((e) => e.includes("codex.mjs was edited locally")));
+
+    await syncProject(target);
+    assert.deepEqual((await checkProject(target)).errors, []);
+  }));
+
+test("sync pins project.yaml to this core version", () =>
+  withProject(async (target) => {
+    const path = join(target, "project.yaml");
+    await edit(path, (text) => text.replace(/version: .*/, "version: 0.0.1"));
+    await syncProject(target);
+    assert.equal(parse(await readFile(path, "utf8")).core.version, version);
+  }));
+
+test("the workflow check reads the project's tracker key, limits and commands", () =>
+  withProject(async (target) => {
+    const workflow = join(target, "WORKFLOW.md");
+    const original = await readFile(workflow, "utf8");
+    for (const [change, message] of [
+      [(t) => t.replace("project_key: DA", "project_key: XX"), /project_key/],
+      [(t) => t.replace("max_turns: 8", "max_turns: 20"), /max_turns/],
+      [
+        (t) =>
+          t.replace("node .project-os/symphony/codex.mjs", "codex app-server"),
+        /node \.project-os\/symphony\/codex\.mjs/,
+      ],
+      [(t) => t.replace(/^    npm ci\n/m, ""), /after_create must run npm ci/],
+      [(t) => t.replaceAll("match-head-commit", "head"), /match-head-commit/],
+    ]) {
+      await writeFile(workflow, change(original));
+      await assert.rejects(checkWorkflow(false, target), message);
+    }
+    await writeFile(workflow, original);
+    await edit(join(target, "project.yaml"), (text) =>
+      text.replace("verify_command: null", "verify_command: npm run verify"),
+    );
+    await assert.rejects(checkWorkflow(false, target), /npm run verify/);
   }));

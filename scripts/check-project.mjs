@@ -1,8 +1,15 @@
 import { access, readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
-const coreRoot = fileURLToPath(new URL("../", import.meta.url));
+import { parse } from "yaml";
+import { checkWorkflow } from "../symphony/check.mjs";
+import {
+  coreVersion,
+  manifestPath,
+  moduleFiles,
+  sha256,
+  vendorPath,
+} from "./sync-project.mjs";
 
 export const requiredFiles = [
   "project.yaml",
@@ -13,21 +20,6 @@ export const requiredFiles = [
   "memory/learnings.md",
   "docs/idea-planning-template.md",
 ];
-
-// Reads `key: value` from a top-level section of a simple YAML file. Only the
-// flat layout used by template/project.yaml is supported.
-export function readYamlValue(text, section, key) {
-  let inside = false;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/\s+#.*$/, "");
-    if (/^\S/.test(line)) inside = line.trim() === `${section}:`;
-    else if (inside) {
-      const match = line.match(/^\s+([\w-]+):\s*(.*)$/);
-      if (match?.[1] === key) return match[2].trim() || undefined;
-    }
-  }
-  return undefined;
-}
 
 const semver = /^(\d+)\.(\d+)\.(\d+)$/;
 const compare = (a, b) => {
@@ -52,6 +44,45 @@ async function textFiles(directory) {
   return nested.flat();
 }
 
+// Compares the project's copy of the Symphony module with its core.json pin,
+// and with this core when the versions match.
+async function checkVendored(root, version, current, errors, warnings) {
+  let pin;
+  try {
+    pin = JSON.parse(await readFile(join(root, manifestPath), "utf8"));
+  } catch {
+    errors.push(
+      `Missing ${manifestPath}; run project-os-core/scripts/sync-project.mjs`,
+    );
+    return;
+  }
+  if (pin.version !== version)
+    errors.push(
+      `${manifestPath} is for core ${pin.version}, but project.yaml pins ${version}`,
+    );
+  for (const [path, hash] of Object.entries(pin.files ?? {})) {
+    let text;
+    try {
+      text = await readFile(join(root, path), "utf8");
+    } catch {
+      errors.push(`Missing ${path}`);
+      continue;
+    }
+    if (sha256(text) !== hash)
+      errors.push(`${path} was edited locally; change it in the core instead`);
+  }
+  if (version !== current) return;
+  const expected = await moduleFiles();
+  for (const [name, text] of Object.entries(expected)) {
+    const path = `${vendorPath}/${name}`;
+    if (pin.files?.[path] !== sha256(text))
+      errors.push(`${path} does not match core ${current}; sync the project`);
+  }
+  for (const path of Object.keys(pin.files ?? {}))
+    if (!(path.slice(vendorPath.length + 1) in expected))
+      warnings.push(`${path} is no longer part of core ${current}`);
+}
+
 export async function checkProject(directory) {
   const root = resolve(directory);
   const errors = [];
@@ -66,35 +97,35 @@ export async function checkProject(directory) {
   }
   if (errors.length) return { errors, warnings };
 
-  const manifest = await readFile(join(root, "project.yaml"), "utf8");
-  const version = readYamlValue(manifest, "core", "version");
-  const coreVersion = (
-    await readFile(join(coreRoot, "VERSION"), "utf8")
-  ).trim();
-  if (!version || !semver.test(version))
+  let manifest;
+  try {
+    manifest = parse(await readFile(join(root, "project.yaml"), "utf8"));
+  } catch (error) {
+    errors.push(`project.yaml is not valid YAML: ${error.message}`);
+    return { errors, warnings };
+  }
+  const version = String(manifest?.core?.version ?? "");
+  const current = await coreVersion();
+  if (!semver.test(version))
     errors.push("project.yaml core.version must be a version like 0.1.0");
-  else if (compare(version, coreVersion) > 0)
+  else if (compare(version, current) > 0)
     errors.push(
-      `project.yaml uses core ${version}, newer than this core (${coreVersion})`,
+      `project.yaml uses core ${version}, newer than this core (${current})`,
     );
-  else if (compare(version, coreVersion) < 0)
-    warnings.push(`Core ${coreVersion} is available; project uses ${version}`);
+  else if (compare(version, current) < 0)
+    warnings.push(`Core ${current} is available; project uses ${version}`);
 
-  const ready = readYamlValue(manifest, "labels", "ready");
-  if (!ready) errors.push("project.yaml labels.ready is missing");
-  else {
-    const workflow = await readFile(join(root, "WORKFLOW.md"), "utf8");
-    const front = workflow.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
-    const required = front.match(
-      /required_labels:\s*\r?\n((?:\s+-\s*.+\r?\n?)+)/,
-    );
-    const labels =
-      required?.[1].match(/-\s*(\S+)/g)?.map((l) => l.replace(/^-\s*/, "")) ??
-      [];
-    if (!labels.includes(ready))
-      errors.push(
-        `WORKFLOW.md required_labels must include the ready label "${ready}"`,
-      );
+  if (!manifest?.labels?.ready)
+    errors.push("project.yaml labels.ready is missing");
+
+  if (manifest?.runtime?.orchestrator === "symphony") {
+    if (semver.test(version))
+      await checkVendored(root, version, current, errors, warnings);
+    try {
+      await checkWorkflow(false, root);
+    } catch (error) {
+      errors.push(`WORKFLOW.md: ${error.message}`);
+    }
   }
 
   let todos = 0;

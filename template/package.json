@@ -1,0 +1,18 @@
+{
+  "name": "__PROJECT_SLUG__",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "symphony:setup": "node .project-os/symphony/setup.mjs",
+    "symphony:check": "node --env-file-if-exists=.env .project-os/symphony/check.mjs",
+    "symphony:probe": "node --env-file-if-exists=.env .project-os/symphony/probe.mjs",
+    "symphony:start": "node --env-file-if-exists=.env .project-os/symphony/start.mjs",
+    "symphony:service": "node .project-os/symphony/service.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  }
+}

@@ -12,12 +12,13 @@ good-ideas là dự án thử đầu tiên. Lõi v0 được rút ra từ commit
 | `docs/symphony-adoption.md`      | `gates/README.md`, `playbooks/agent-delivery.md` | Chỉ giữ phần chung: nhãn, workpad, quy tắc merge.              |
 | Nhãn `symphony-*`                | `project.yaml` → `labels`                        | Giữ nguyên tên làm mặc định để good-ideas không phải đổi gì.   |
 
+| `scripts/symphony-*.mjs`, `symphony-runtime.json`, bài test | `symphony/`, `tests/symphony-*.test.ts` (lõi 0.2.0) | Tên dịch vụ, thư mục cấu hình và các giá trị kiểm tra `WORKFLOW.md` lấy từ `project.yaml` thay vì viết cứng. |
+
 ## Còn lại trong good-ideas
 
-- Các script Symphony (`scripts/symphony-*.mjs`, `symphony-runtime.json`). Chúng
-  dùng được chung nhưng đang gắn với cách cài trên máy chủ của good-ideas. Sẽ
-  chuyển sang lõi ở bước tiếp theo, sau khi có bài test riêng.
 - Toàn bộ quy tắc dữ liệu tài chính và các dịch vụ của Investment Storylines.
+- Runbook vận hành worker trên máy chủ (`docs/symphony-service.md`), vì nó ghi
+  đường dẫn và tài khoản cụ thể của máy đó.
 
 ## Các bước để good-ideas dùng lõi
 

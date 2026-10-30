@@ -25,12 +25,15 @@ workspace:
 hooks:
   after_create: |
     git clone git@github.com:__REPO__.git .
+    npm ci
+  before_remove: |
+    node .project-os/symphony/archive.mjs
   timeout_ms: 180000
 agent:
   max_concurrent_agents: 1
   max_turns: 8
 codex:
-  command: codex app-server
+  command: node .project-os/symphony/codex.mjs
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
