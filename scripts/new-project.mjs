@@ -29,12 +29,10 @@ async function isEmptyOrMissing(directory) {
 }
 
 export async function createProject(target, values) {
-  for (const key of ["name", "repo", "trackerKey", "owner"])
+  for (const key of ["name", "repo", "owner"])
     if (!values[key]) throw new Error(`Missing required option: ${key}`);
   if (!/^[\w.-]+\/[\w.-]+$/.test(values.repo))
     throw new Error("--repo must look like owner/name");
-  if (!/^[A-Z][A-Z0-9]{0,9}$/.test(values.trackerKey))
-    throw new Error("--tracker-key must be 1-10 uppercase letters or digits");
   const destination = resolve(target);
   if (!(await isEmptyOrMissing(destination)))
     throw new Error(`Target directory is not empty: ${destination}`);
@@ -45,7 +43,6 @@ export async function createProject(target, values) {
     __PROJECT_NAME__: values.name,
     __PROJECT_SLUG__: slug(values.name) || "project",
     __REPO__: values.repo,
-    __TRACKER_KEY__: values.trackerKey,
     __OWNER__: values.owner,
     __DATE__: values.date ?? new Date().toISOString().slice(0, 10),
   };
@@ -75,21 +72,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     options: {
       name: { type: "string" },
       repo: { type: "string" },
-      "tracker-key": { type: "string" },
       owner: { type: "string" },
     },
   });
   if (positionals.length !== 1) {
     console.error(
-      'Usage: node scripts/new-project.mjs <target-dir> --name "My App" --repo owner/my-app --tracker-key MA --owner "Name"',
+      'Usage: node scripts/new-project.mjs <target-dir> --name "My App" --repo owner/my-app --owner "Name"',
     );
     process.exit(2);
   }
   try {
-    const result = await createProject(positionals[0], {
-      ...values,
-      trackerKey: values["tracker-key"],
-    });
+    const result = await createProject(positionals[0], values);
     console.log(
       `Created ${result.destination} from Project OS core ${result.version} (${result.files.length} files).`,
     );

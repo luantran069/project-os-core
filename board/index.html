@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Board dự án</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b1f24;
+        --muted: #5f6b7a;
+        --line: #dfe3e8;
+        --accent: #2457d6;
+        --ok: #1f7a3d;
+        --warn: #a15c00;
+        --bad: #b42318;
+        --chip: #eef1f5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111418;
+          --panel: #1a1f25;
+          --text: #e6e9ed;
+          --muted: #9aa5b1;
+          --line: #2c333b;
+          --accent: #7aa2ff;
+          --ok: #5cc98a;
+          --warn: #f0b45a;
+          --bad: #ff8a80;
+          --chip: #252c34;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+      header h1 {
+        font-size: 17px;
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.danger {
+        color: var(--bad);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--bg);
+      }
+      .tabs {
+        display: none;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 10px 16px 0;
+      }
+      .tabs button {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .tabs button[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .board {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(190px, 1fr);
+        gap: 12px;
+        padding: 16px;
+        overflow-x: auto;
+        align-items: start;
+      }
+      .column h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0 0 8px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+      }
+      .card:hover {
+        border-color: var(--accent);
+      }
+      .card .title {
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        align-items: center;
+      }
+      .chip {
+        background: var(--chip);
+        border-radius: 999px;
+        padding: 1px 8px;
+      }
+      .chip.gate {
+        color: var(--warn);
+      }
+      .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        margin-right: 4px;
+      }
+      .dot.success {
+        background: var(--ok);
+      }
+      .dot.failure {
+        background: var(--bad);
+      }
+      .dot.pending {
+        background: var(--warn);
+      }
+      a {
+        color: var(--accent);
+      }
+      dialog {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        color: var(--text);
+        width: min(720px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        padding: 0;
+      }
+      dialog::backdrop {
+        background: rgb(0 0 0 / 0.4);
+      }
+      .sheet {
+        padding: 16px;
+      }
+      .sheet h3 {
+        margin: 0 0 8px;
+      }
+      .body {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--bg);
+        border-radius: 8px;
+        padding: 10px;
+        max-height: 40vh;
+        overflow: auto;
+        font-size: 14px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .error {
+        color: var(--bad);
+        min-height: 1.2em;
+      }
+      .login {
+        max-width: 360px;
+        margin: 15vh auto;
+        padding: 0 16px;
+      }
+      .login form {
+        display: grid;
+        gap: 10px;
+      }
+      @media (max-width: 720px) {
+        .tabs {
+          display: flex;
+        }
+        .board {
+          grid-auto-flow: row;
+          grid-auto-columns: auto;
+          overflow-x: visible;
+        }
+        .column:not(.active) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      const app = document.getElementById("app");
+      const state = { data: null, active: "plan" };
+      const checkText = {
+        success: "CI đạt",
+        failure: "CI lỗi",
+        pending: "CI đang chạy",
+        none: "chưa có CI",
+        unknown: "CI ?",
+      };
+
+      function el(tag, props = {}, ...children) {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(props)) {
+          if (key === "class") node.className = value;
+          else if (key.startsWith("on"))
+            node.addEventListener(key.slice(2), value);
+          else if (value !== undefined && value !== null)
+            node.setAttribute(key, value);
+        }
+        for (const child of children.flat())
+          if (child !== null && child !== undefined && child !== false)
+            node.append(child instanceof Node ? child : String(child));
+        return node;
+      }
+
+      async function call(path, body) {
+        const response = await fetch(path, {
+          method: body ? "POST" : "GET",
+          headers: body
+            ? { "Content-Type": "application/json", "X-Board": "1" }
+            : {},
+          body: body ? JSON.stringify(body) : undefined,
+          credentials: "same-origin",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401 && path !== "/api/login") {
+          showLogin();
+          throw new Error("Cần đăng nhập");
+        }
+        if (!response.ok)
+          throw new Error(data.error || `Lỗi ${response.status}`);
+        return data;
+      }
+
+      function showLogin(message = "") {
+        const error = el("div", { class: "error" }, message);
+        const input = el("input", {
+          type: "password",
+          autocomplete: "current-password",
+          placeholder: "Mật khẩu",
+          required: "",
+        });
+        const form = el(
+          "form",
+          {
+            onsubmit: async (event) => {
+              event.preventDefault();
+              try {
+                await call("/api/login", { password: input.value });
+                load();
+              } catch (e) {
+                error.textContent = e.message;
+              }
+            },
+          },
+          el("h1", {}, "Board dự án"),
+          input,
+          el("button", { class: "primary", type: "submit" }, "Đăng nhập"),
+          error,
+        );
+        app.replaceChildren(el("div", { class: "login" }, form));
+        input.focus();
+      }
+
+      const safeUrl = (url) =>
+        typeof url === "string" && url.startsWith("https://") ? url : null;
+      const when = (iso) =>
+        iso
+          ? new Date(iso).toLocaleString("vi-VN", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })
+          : "";
+
+      function card(feature, column) {
+        const pull = feature.pull;
+        return el(
+          "div",
+          {
+            class: "card",
+            tabindex: "0",
+            onclick: () => openFeature(feature, column),
+            onkeydown: (e) => e.key === "Enter" && openFeature(feature, column),
+          },
+          el("div", { class: "title" }, `#${feature.number} ${feature.title}`),
+          el(
+            "div",
+            { class: "meta" },
+            column.gate && feature.stage !== "done"
+              ? el("span", { class: "chip gate" }, `Chờ ${column.gate}`)
+              : null,
+            feature.priority
+              ? el("span", { class: "chip" }, feature.priority.toUpperCase())
+              : null,
+            pull
+              ? el(
+                  "span",
+                  {},
+                  pull.checks
+                    ? el("span", { class: `dot ${pull.checks}` })
+                    : null,
+                  `PR #${pull.number}`,
+                )
+              : null,
+            pull?.preview ? el("span", {}, "có preview") : null,
+            el("span", {}, when(feature.updated)),
+          ),
+        );
+      }
+
+      function render() {
+        const { data } = state;
+        const byColumn = Object.fromEntries(
+          data.columns.map((c) => [c.id, []]),
+        );
+        for (const feature of data.features)
+          byColumn[feature.stage]?.push(feature);
+        const order = { now: 0, next: 1, later: 2 };
+        for (const list of Object.values(byColumn))
+          list.sort(
+            (a, b) =>
+              (order[a.priority] ?? 3) - (order[b.priority] ?? 3) ||
+              String(b.updated).localeCompare(String(a.updated)),
+          );
+        const tabs = el(
+          "nav",
+          { class: "tabs" },
+          data.columns.map((column) =>
+            el(
+              "button",
+              {
+                "aria-pressed": String(column.id === state.active),
+                onclick: () => {
+                  state.active = column.id;
+                  render();
+                },
+              },
+              `${column.title} ${byColumn[column.id].length}`,
+            ),
+          ),
+        );
+        const board = el(
+          "main",
+          { class: "board" },
+          data.columns.map((column) =>
+            el(
+              "section",
+              { class: `column${column.id === state.active ? " active" : ""}` },
+              el(
+                "h2",
+                {},
+                el("span", {}, column.title),
+                el("span", {}, byColumn[column.id].length),
+              ),
+              byColumn[column.id].map((feature) => card(feature, column)),
+            ),
+          ),
+        );
+        const header = el(
+          "header",
+          {},
+          el("h1", {}, data.project),
+          el("button", { onclick: newIdea }, "+ Ý tưởng"),
+          el("button", { onclick: () => load(true), title: "Tải lại" }, "↻"),
+        );
+        app.replaceChildren(header, tabs, board);
+      }
+
+      const buttons = {
+        idea: [
+          ["approve", "Duyệt G1: lập kế hoạch", "primary"],
+          ["revise", "Sửa lại"],
+          ["stop", "Dừng", "danger"],
+        ],
+        plan: [
+          ["approve", "Duyệt G2: cho làm", "primary"],
+          ["revise", "Sửa lại"],
+          ["stop", "Dừng", "danger"],
+        ],
+        ready: [["stop", "Tạm dừng", "danger"]],
+        running: [["stop", "Tạm dừng agent", "danger"]],
+        review: [
+          ["approve", "Duyệt và merge PR", "primary"],
+          ["revise", "Yêu cầu sửa"],
+          ["stop", "Dừng", "danger"],
+        ],
+        blocked: [
+          ["approve", "Gỡ chặn, làm tiếp", "primary"],
+          ["revise", "Gỡ chặn kèm ghi chú"],
+          ["stop", "Dừng", "danger"],
+        ],
+        done: [],
+      };
+
+      function openFeature(feature, column) {
+        const dialog = el("dialog");
+        const error = el("div", { class: "error" });
+        const note = el("textarea", {
+          rows: "3",
+          placeholder: "Ghi chú cho agent (bắt buộc khi Sửa lại)",
+        });
+        const workpad = el("div", { class: "body" }, "Đang tải bình luận…");
+        const pull = feature.pull;
+        const act = async (action, label, button) => {
+          if (
+            action === "approve" &&
+            feature.stage === "review" &&
+            !confirm(`Merge PR #${pull?.number ?? "?"} vào nhánh chính?`)
+          )
+            return;
+          button.disabled = true;
+          error.textContent = "";
+          try {
+            await call(`/api/features/${feature.number}/actions`, {
+              action,
+              note: note.value,
+            });
+            dialog.close();
+            load(true);
+          } catch (e) {
+            error.textContent = e.message;
+            button.disabled = false;
+          }
+        };
+        const actionButtons = (buttons[feature.stage] ?? []).map(
+          ([action, label, kind]) => {
+            const button = el("button", { class: kind ?? "" }, label);
+            button.addEventListener("click", () => act(action, label, button));
+            return button;
+          },
+        );
+        dialog.append(
+          el(
+            "div",
+            { class: "sheet" },
+            el("h3", {}, `#${feature.number} ${feature.title}`),
+            el(
+              "div",
+              { class: "meta" },
+              el("span", { class: "chip" }, column.title),
+              ...feature.labels.map((label) =>
+                el("span", { class: "chip" }, label),
+              ),
+              el(
+                "a",
+                {
+                  href: safeUrl(feature.url),
+                  target: "_blank",
+                  rel: "noopener",
+                },
+                "Mở trên GitHub",
+              ),
+            ),
+            pull
+              ? el(
+                  "p",
+                  { class: "meta" },
+                  el(
+                    "a",
+                    {
+                      href: safeUrl(pull.url),
+                      target: "_blank",
+                      rel: "noopener",
+                    },
+                    `PR #${pull.number}`,
+                  ),
+                  pull.state === "merged"
+                    ? "đã merge"
+                    : pull.draft
+                      ? "nháp"
+                      : null,
+                  pull.checks
+                    ? el(
+                        "span",
+                        {},
+                        el("span", { class: `dot ${pull.checks}` }),
+                        checkText[pull.checks] ?? pull.checks,
+                      )
+                    : null,
+                  safeUrl(pull.preview)
+                    ? el(
+                        "a",
+                        {
+                          href: safeUrl(pull.preview),
+                          target: "_blank",
+                          rel: "noopener",
+                        },
+                        "Xem preview",
+                      )
+                    : null,
+                )
+              : null,
+            el("h4", {}, "Mô tả và kế hoạch"),
+            el("div", { class: "body" }, feature.body || "(trống)"),
+            el("h4", {}, "Agent Workpad"),
+            workpad,
+            actionButtons.length ? el("h4", {}, "Quyết định") : null,
+            actionButtons.length ? note : null,
+            el(
+              "div",
+              { class: "actions" },
+              actionButtons,
+              el("button", { onclick: () => dialog.close() }, "Đóng"),
+            ),
+            error,
+          ),
+        );
+        dialog.addEventListener("close", () => dialog.remove());
+        document.body.append(dialog);
+        dialog.showModal();
+        call(`/api/features/${feature.number}/comments`)
+          .then((comments) => {
+            const pad = comments.filter((c) => c.workpad).pop();
+            workpad.textContent = pad ? pad.body : "(agent chưa ghi workpad)";
+          })
+          .catch((e) => (workpad.textContent = e.message));
+      }
+
+      function newIdea() {
+        const dialog = el("dialog");
+        const title = el("input", {
+          placeholder: "Tên ý tưởng",
+          maxlength: "200",
+        });
+        const body = el("textarea", {
+          rows: "6",
+          placeholder: "Mô tả ngắn: vấn đề, ai dùng, kết quả mong muốn",
+        });
+        const error = el("div", { class: "error" });
+        const save = el("button", { class: "primary" }, "Tạo");
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          try {
+            await call("/api/features", {
+              title: title.value,
+              body: body.value,
+            });
+            dialog.close();
+            load(true);
+          } catch (e) {
+            error.textContent = e.message;
+            save.disabled = false;
+          }
+        });
+        dialog.append(
+          el(
+            "div",
+            { class: "sheet" },
+            el("h3", {}, "Ý tưởng mới"),
+            title,
+            el("p"),
+            body,
+            el(
+              "div",
+              { class: "actions" },
+              save,
+              el("button", { onclick: () => dialog.close() }, "Huỷ"),
+            ),
+            error,
+          ),
+        );
+        dialog.addEventListener("close", () => dialog.remove());
+        document.body.append(dialog);
+        dialog.showModal();
+        title.focus();
+      }
+
+      async function load(fresh = false) {
+        try {
+          state.data = await call(`/api/board${fresh ? "?fresh=1" : ""}`);
+          document.title = `Board · ${state.data.project}`;
+          render();
+        } catch (e) {
+          if (e.message !== "Cần đăng nhập")
+            app.replaceChildren(
+              el("p", { class: "error", style: "padding:16px" }, e.message),
+            );
+        }
+      }
+
+      load();
+      setInterval(
+        () => document.visibilityState === "visible" && state.data && load(),
+        60_000,
+      );
+    </script>
+  </body>
+</html>

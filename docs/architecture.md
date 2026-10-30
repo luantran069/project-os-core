@@ -28,8 +28,9 @@ cho từng ticket.
 Từ lõi 0.2.0, mã điều khiển Symphony là một phần của lõi (xem
 [Symphony trong lõi](symphony.md)); dự án nhận một bản sao được ghim phiên bản.
 Lõi giữ nguyên lựa chọn Symphony. Tracker và runtime được khai báo trong
-`project.yaml` để sau này có thể thay (ví dụ GitHub Issues thay Jira, Claude Code
-thay Codex) mà không đổi khái niệm cổng và nhãn.
+`project.yaml`. Từ lõi 0.3.0, tracker mặc định là GitHub Issues của chính repo dự
+án (Symphony v0.0.3 có sẵn bộ đọc GitHub); Jira vẫn được hỗ trợ cho dự án chưa
+chuyển. Khái niệm cổng và nhãn không đổi.
 
 ## Agent
 

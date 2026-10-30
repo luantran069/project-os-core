@@ -6,7 +6,7 @@ not proceed past the gate; they take other ready work instead.
 
 | Gate | Decision                        | Shown to the owner                       | Tracker signal                              | May be automated   |
 | ---- | ------------------------------- | ---------------------------------------- | ------------------------------------------- | ------------------ |
-| G1   | Build this idea?                | Strategist assessment card               | Idea stage → plan stage                     | No                 |
+| G1   | Build this idea?                | Strategist assessment card               | `idea` label → `plan` label                 | No                 |
 | G2   | Which features, in which order? | Feature cards with acceptance checklists | Owner adds the `ready` label                | No                 |
 | G3   | Release to production?          | Staging link and release notes           | `gates.release: required` in `project.yaml` | Yes, set to `auto` |
 | G4   | Publish this content?           | Content drafts before publication        | `gates.public_content: required`            | No                 |
@@ -31,3 +31,24 @@ Rules that hold for every project:
 - Only the owner adds `ready` or removes a review label.
 - A blocked agent removes only `ready`, adds `blocked`, records what it needs in
   the workpad, and leaves the ticket's state unchanged.
+
+## GitHub Issues tracker
+
+From core 0.3.0 a project can keep its features in GitHub Issues
+(`tracker.kind: github`). An issue is only open or closed, so every stage is a
+label on an open issue:
+
+| Stage                 | Labels                                 | Agent runs |
+| --------------------- | -------------------------------------- | ---------- |
+| Idea (waiting for G1) | `idea`                                 | No         |
+| Plan (waiting for G2) | `plan`                                 | No         |
+| Ready                 | `ready`                                | Yes        |
+| In progress           | `ready`, `in_progress`                 | Yes        |
+| Waiting for review    | `human_review`, without `ready`        | No         |
+| Blocked               | `blocked`, without `ready`             | No         |
+| Done                  | issue closed (the PR says `Closes #N`) | No         |
+
+Removing `ready` stops a running agent at the next poll. Rework is the owner
+adding `ready` again to the same issue, so the branch, PR and workpad carry on.
+GitHub has no "blocked by" link that Symphony reads: the owner adds `ready` to a
+dependent feature only after its dependency is closed.
