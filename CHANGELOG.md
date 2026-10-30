@@ -21,6 +21,10 @@ project's own board.
   changes or stop, and leave a comment on the issue; approving a review merges
   the PR at the shown head. Deployed from `.project-os/board/Dockerfile`; see
   `docs/board.md`.
+- `symphony/migrate-jira.mjs` (`npm run symphony:migrate-jira`): one-time,
+  dry-run-first move of a Jira project's open tickets into GitHub issues with
+  stage labels, roadmap priority, comments and blockers; done tickets go to
+  `docs/jira-archive.md`. See `docs/migrate-from-jira.md`.
 - `sync-project` now vendors every core module (`symphony/`, `board/`) under
   `.project-os/<module>/`.
 
