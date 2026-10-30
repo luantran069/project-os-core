@@ -16,6 +16,13 @@ project's own board.
   label, PR body starts with `Closes #N`. `new-project` no longer takes
   `--tracker-key`.
 - Jira projects keep working unchanged until they migrate.
+- New `board/` module: the owner's feature board (zero-dependency Node server
+  and page, password login). Columns follow the gates; buttons approve, ask for
+  changes or stop, and leave a comment on the issue; approving a review merges
+  the PR at the shown head. Deployed from `.project-os/board/Dockerfile`; see
+  `docs/board.md`.
+- `sync-project` now vendors every core module (`symphony/`, `board/`) under
+  `.project-os/<module>/`.
 
 ## 0.2.0 (2026-10-30)
 

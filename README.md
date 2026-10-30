@@ -21,6 +21,7 @@ project-os-core/          repo này
   playbooks/              bài học dùng chung, rút từ các dự án
   template/               bộ khung cho dự án mới
   symphony/               bộ điều phối: chạy agent theo feature (GitHub Issues)
+  board/                  board của chủ dự án: xem feature, duyệt các cổng
   scripts/                tạo dự án mới, đồng bộ lõi vào dự án, kiểm tra dự án
   docs/                   kiến trúc, cách đưa good-ideas về dùng lõi
 
@@ -31,7 +32,7 @@ my-app/                   một dự án tạo từ template
   memory/                 tầm nhìn, quyết định, trạng thái, bài học
   docs/idea-planning-template.md
   marketing/brand.md
-  .project-os/symphony/   bản sao symphony/ của lõi, do sync-project ghi, không sửa tay
+  .project-os/            bản sao symphony/ và board/ của lõi, do sync-project ghi, không sửa tay
 ```
 
 ## Bắt đầu một dự án mới

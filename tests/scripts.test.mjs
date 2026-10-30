@@ -9,6 +9,8 @@ import { checkProject } from "../scripts/check-project.mjs";
 import { createProject } from "../scripts/new-project.mjs";
 import { syncProject, vendorPath } from "../scripts/sync-project.mjs";
 
+const symphonyPath = `${vendorPath}/symphony`;
+
 const options = {
   name: "Demo Ứng Dụng",
   repo: "example/demo-app",
@@ -55,9 +57,11 @@ test("a new project fills every placeholder, vendors Symphony and passes the che
       await readFile(join(target, ".project-os/core.json"), "utf8"),
     );
     assert.equal(pin.version, version);
-    assert.ok(`${vendorPath}/codex.mjs` in pin.files);
+    assert.ok(`${symphonyPath}/codex.mjs` in pin.files);
+    for (const file of ["server.mjs", "github.mjs", "index.html", "Dockerfile"])
+      assert.ok(`${vendorPath}/board/${file}` in pin.files, file);
     assert.equal(
-      await readFile(join(target, vendorPath, "check.mjs"), "utf8"),
+      await readFile(join(target, symphonyPath, "check.mjs"), "utf8"),
       await readFile(new URL("../symphony/check.mjs", import.meta.url), "utf8"),
     );
     await checkWorkflow(false, target);
@@ -114,7 +118,7 @@ test("leftover placeholders are errors", () =>
 test("a locally edited Symphony file fails the check until the project is synced again", () =>
   withProject(async (target) => {
     await edit(
-      join(target, vendorPath, "codex.mjs"),
+      join(target, symphonyPath, "codex.mjs"),
       (text) => `${text}\n// local`,
     );
     const { errors } = await checkProject(target);
