@@ -158,7 +158,7 @@ const source = (token = "synthetic-token") =>
     ["JIRA_BASE_URL", fixtureUrl],
     ["JIRA_EMAIL", fixtureEmail],
     ["JIRA_API_TOKEN", `'${token}'`],
-    ["DATABASE_PASSWORD", "do-not-copy"],
+    ["APP_SETTING", "do-not-copy"],
     ["OPENAI_API_KEY", "do-not-copy"],
   ]);
 
@@ -172,7 +172,7 @@ test("service extracts only Jira values and preserves shell metacharacters liter
       ["JIRA_API_TOKEN", '"synthetic\\\\token\\" $HOME `id`"'],
     ]),
   );
-  assert.doesNotMatch(value, /DATABASE_PASSWORD|OPENAI_API_KEY|do-not-copy/);
+  assert.doesNotMatch(value, /APP_SETTING|OPENAI_API_KEY|do-not-copy/);
   assert.equal(
     jiraEnvironment(source().replaceAll("\n", "\r\n")),
     jiraEnvironment(source()),
