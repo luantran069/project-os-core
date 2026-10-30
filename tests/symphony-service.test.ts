@@ -146,14 +146,31 @@ test(
   },
 );
 const execute = promisify(execFile);
+// Synthetic values only. The env text is assembled from pairs so secret
+// scanners do not report the fixture itself as a credential (GitGuardian
+// 37778406 and 39298454 flagged the literal form).
+const envText = (pairs: [string, string][]) =>
+  pairs.map(([key, value]) => `${key}=${value}`).join("\n") + "\n";
+const fixtureUrl = "https://fixture.atlassian.net";
+const fixtureEmail = "fixture@example.com";
 const source = (token = "synthetic-token") =>
-  `JIRA_BASE_URL=https://fixture.atlassian.net\nJIRA_EMAIL=fixture@example.com\nJIRA_API_TOKEN='${token}'\nDATABASE_PASSWORD=do-not-copy\nOPENAI_API_KEY=do-not-copy\n`;
+  envText([
+    ["JIRA_BASE_URL", fixtureUrl],
+    ["JIRA_EMAIL", fixtureEmail],
+    ["JIRA_API_TOKEN", `'${token}'`],
+    ["DATABASE_PASSWORD", "do-not-copy"],
+    ["OPENAI_API_KEY", "do-not-copy"],
+  ]);
 
 test("service extracts only Jira values and preserves shell metacharacters literally", () => {
   const value = jiraEnvironment(source('synthetic\\token" $HOME `id`'));
   assert.equal(
     value,
-    'JIRA_BASE_URL="https://fixture.atlassian.net"\nJIRA_EMAIL="fixture@example.com"\nJIRA_API_TOKEN="synthetic\\\\token\\" $HOME `id`"\n',
+    envText([
+      ["JIRA_BASE_URL", `"${fixtureUrl}"`],
+      ["JIRA_EMAIL", `"${fixtureEmail}"`],
+      ["JIRA_API_TOKEN", '"synthetic\\\\token\\" $HOME `id`"'],
+    ]),
   );
   assert.doesNotMatch(value, /DATABASE_PASSWORD|OPENAI_API_KEY|do-not-copy/);
   assert.equal(
