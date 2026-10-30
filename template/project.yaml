@@ -18,6 +18,9 @@ runtime:
   agent: codex
   max_concurrent_agents: 1
   max_turns: 8
+  # Checked against WORKFLOW.md by .project-os/symphony/check.mjs.
+  setup_command: npm ci # must appear in the after_create hook
+  verify_command: null # e.g. npm run verify; must appear in the agent prompt
 
 # Label names on the tracker. Defaults match good-ideas.
 labels:

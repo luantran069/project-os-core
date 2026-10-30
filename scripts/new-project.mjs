@@ -2,6 +2,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { slug } from "../symphony/project.mjs";
+import { syncProject } from "./sync-project.mjs";
 
 const coreRoot = fileURLToPath(new URL("../", import.meta.url));
 const templateRoot = join(coreRoot, "template");
@@ -41,6 +43,7 @@ export async function createProject(target, values) {
   const replacements = {
     __CORE_VERSION__: version,
     __PROJECT_NAME__: values.name,
+    __PROJECT_SLUG__: slug(values.name) || "project",
     __REPO__: values.repo,
     __TRACKER_KEY__: values.trackerKey,
     __OWNER__: values.owner,
@@ -57,7 +60,13 @@ export async function createProject(target, values) {
     await writeFile(join(destination, path), text);
     written.push(path);
   }
-  return { destination, version, files: written.sort() };
+  const synced = await syncProject(destination);
+  return {
+    destination,
+    version,
+    files: written.sort(),
+    warnings: synced.warnings,
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -84,8 +93,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(
       `Created ${result.destination} from Project OS core ${result.version} (${result.files.length} files).`,
     );
+    for (const warning of result.warnings) console.log(`warning: ${warning}`);
     console.log(
-      "Next: write memory/vision.md, then fill the TODO(owner) items.",
+      "Next: run npm install, write memory/vision.md, then fill the TODO(owner) items.",
     );
   } catch (error) {
     console.error(error.message);

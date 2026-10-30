@@ -20,7 +20,8 @@ project-os-core/          repo này
   gates/                  bốn cổng duyệt và cách gắn nhãn trên tracker
   playbooks/              bài học dùng chung, rút từ các dự án
   template/               bộ khung cho dự án mới
-  scripts/                tạo dự án mới, kiểm tra dự án
+  symphony/               bộ điều phối: chạy agent theo ticket Jira
+  scripts/                tạo dự án mới, đồng bộ lõi vào dự án, kiểm tra dự án
   docs/                   kiến trúc, cách đưa good-ideas về dùng lõi
 
 my-app/                   một dự án tạo từ template
@@ -30,17 +31,21 @@ my-app/                   một dự án tạo từ template
   memory/                 tầm nhìn, quyết định, trạng thái, bài học
   docs/idea-planning-template.md
   marketing/brand.md
+  .project-os/symphony/   bản sao symphony/ của lõi, do sync-project ghi, không sửa tay
 ```
 
 ## Bắt đầu một dự án mới
 
-Cần Node 22 trở lên. Không cần cài thêm gói nào.
+Cần Node 22.18 trở lên. Chạy `npm ci` trong lõi một lần trước.
 
 ```bash
 node scripts/new-project.mjs ../my-app \
   --name "My App" --repo luantran069/my-app --tracker-key MA --owner "Luan Tran"
 node scripts/check-project.mjs ../my-app
 ```
+
+Lệnh này cũng chép bộ điều phối Symphony vào `.project-os/symphony/` của dự án.
+Khi lõi có phiên bản mới, chạy `node scripts/sync-project.mjs ../my-app` để cập nhật.
 
 Sau đó mở `../my-app/memory/vision.md` và viết tầm nhìn. Đây là file duy nhất bắt
 buộc người viết; agent đọc nó trước mọi việc.
@@ -59,6 +64,7 @@ Chi tiết và nhãn tracker tương ứng: [`gates/README.md`](gates/README.md)
 ## Tài liệu
 
 - [Kiến trúc](docs/architecture.md): vòng đời, agent, mức tự chủ, bộ nhớ.
+- [Symphony trong lõi](docs/symphony.md): các lệnh điều phối, cách dự án nhận và ghim chúng.
 - [Đưa good-ideas về dùng lõi](docs/adopting-good-ideas.md): phần nào đã rút ra,
   phần nào còn lại trong good-ideas, các bước tiếp theo.
 - [Vai trò agent](agents/README.md).
@@ -70,4 +76,4 @@ Chi tiết và nhãn tracker tương ứng: [`gates/README.md`](gates/README.md)
 npm test
 ```
 
-Chạy bài test cho script tạo dự án và kiểm tra dự án.
+Chạy bài test cho script tạo, đồng bộ, kiểm tra dự án và cho các file Symphony.
