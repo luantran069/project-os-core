@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 (2026-10-30)
+
+Features can live in GitHub Issues instead of Jira, as the data source for the
+project's own board.
+
+- `tracker.kind: github` in `project.yaml` (with `tracker.repo`) is the default for
+  new projects. Symphony v0.0.3 polls open issues of that repo; stages are labels.
+- New label `labels.in_progress` (`symphony-in-progress`), added by the agent when
+  it starts so the board can tell ready work from running work.
+- `symphony/check.mjs` checks either tracker; `--live` for GitHub reads the
+  repository, its labels and the open-issue poll without writing.
+- `symphony:service install` copies only `GITHUB_TOKEN` for GitHub projects.
+- Template `WORKFLOW.md` uses GitHub issues: workpad comment, review hand-off by
+  label, PR body starts with `Closes #N`. `new-project` no longer takes
+  `--tracker-key`.
+- Jira projects keep working unchanged until they migrate.
+
 ## 0.2.0 (2026-10-30)
 
 Symphony becomes part of the core instead of living in each project.

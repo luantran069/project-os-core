@@ -12,7 +12,6 @@ import { syncProject, vendorPath } from "../scripts/sync-project.mjs";
 const options = {
   name: "Demo Ứng Dụng",
   repo: "example/demo-app",
-  trackerKey: "DA",
   owner: "Example Owner",
   date: "2026-10-29",
 };
@@ -40,7 +39,10 @@ test("a new project fills every placeholder, vendors Symphony and passes the che
       await readFile(join(target, "project.yaml"), "utf8"),
     );
     assert.equal(manifest.core.version, version);
-    assert.equal(manifest.tracker.project_key, "DA");
+    assert.deepEqual(manifest.tracker, {
+      kind: "github",
+      repo: "example/demo-app",
+    });
     const pkg = JSON.parse(
       await readFile(join(target, "package.json"), "utf8"),
     );
@@ -48,6 +50,7 @@ test("a new project fills every placeholder, vendors Symphony and passes the che
     const workflow = await readFile(join(target, "WORKFLOW.md"), "utf8");
     assert.match(workflow, /git@github.com:example\/demo-app.git/);
     assert.match(workflow, /\{\{ issue.identifier \}\}/);
+    assert.match(workflow, /repo: example\/demo-app/);
     const pin = JSON.parse(
       await readFile(join(target, ".project-os/core.json"), "utf8"),
     );
@@ -74,8 +77,8 @@ test("invalid options are refused", async () => {
     /owner\/name/,
   );
   await assert.rejects(
-    createProject("unused", { ...options, trackerKey: "da" }),
-    /uppercase/,
+    createProject("unused", { ...options, owner: "" }),
+    /Missing required option: owner/,
   );
 });
 
@@ -129,12 +132,25 @@ test("sync pins project.yaml to this core version", () =>
     assert.equal(parse(await readFile(path, "utf8")).core.version, version);
   }));
 
-test("the workflow check reads the project's tracker key, limits and commands", () =>
+test("the workflow check reads the project's tracker repo, limits and commands", () =>
   withProject(async (target) => {
     const workflow = join(target, "WORKFLOW.md");
     const original = await readFile(workflow, "utf8");
     for (const [change, message] of [
-      [(t) => t.replace("project_key: DA", "project_key: XX"), /project_key/],
+      [
+        (t) => t.replace("repo: example/demo-app", "repo: example/other"),
+        /tracker repo/,
+      ],
+      [(t) => t.replace("kind: github", "kind: jira"), /tracker\.kind/],
+      [(t) => t.replace("    - open\n", "    - Delivery\n"), /open/],
+      [
+        (t) => t.replace("token: $GITHUB_TOKEN", "token: literal-value"),
+        /environment reference/,
+      ],
+      [
+        (t) => t.replaceAll("symphony-in-progress", "running"),
+        /symphony-in-progress/,
+      ],
       [(t) => t.replace("max_turns: 8", "max_turns: 20"), /max_turns/],
       [
         (t) =>
@@ -152,4 +168,29 @@ test("the workflow check reads the project's tracker key, limits and commands", 
       text.replace("verify_command: null", "verify_command: npm run verify"),
     );
     await assert.rejects(checkWorkflow(false, target), /npm run verify/);
+  }));
+
+test("projects still on Jira keep passing the Jira contract", () =>
+  withProject(async (target) => {
+    const fixture = await readFile(
+      new URL("./fixtures/jira-WORKFLOW.md", import.meta.url),
+      "utf8",
+    );
+    const workflow = join(target, "WORKFLOW.md");
+    await writeFile(
+      workflow,
+      fixture
+        .replaceAll("__TRACKER_KEY__", "DA")
+        .replaceAll("__REPO__", "example/demo-app"),
+    );
+    const manifest = join(target, "project.yaml");
+    await edit(manifest, (text) =>
+      text.replace(
+        /tracker:\n  kind: github\n  repo: .*\n/,
+        "tracker:\n  kind: jira\n  project_key: DA\n",
+      ),
+    );
+    await checkWorkflow(false, target);
+    await edit(workflow, (text) => text.replaceAll("Impact", "Review"));
+    await assert.rejects(checkWorkflow(false, target), /Impact/);
   }));

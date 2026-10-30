@@ -18,8 +18,14 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-const { jiraEnvironment, serviceUnit, serviceNameFor, serviceLogCommand } =
-  await import(new URL("../symphony/service.mjs", import.meta.url).href);
+const {
+  githubEnvironment,
+  jiraEnvironment,
+  serviceUnit,
+  serviceNameFor,
+  serviceLogCommand,
+  trackerEnvironment,
+} = await import(new URL("../symphony/service.mjs", import.meta.url).href);
 const projectName = "Demo Storylines";
 const serviceName = serviceNameFor(projectName);
 const projectManifest = `project:\n  name: ${projectName}\n`;
@@ -176,6 +182,42 @@ test("service extracts only Jira values and preserves shell metacharacters liter
   assert.equal(
     jiraEnvironment(source().replaceAll("\n", "\r\n")),
     jiraEnvironment(source()),
+  );
+});
+
+test("service extracts only the GitHub token for GitHub projects", () => {
+  const value = trackerEnvironment(
+    "github",
+    envText([
+      ["GITHUB_TOKEN", "'synthetic-value'"],
+      ["JIRA_API_TOKEN", "do-not-copy"],
+      ["APP_SETTING", "do-not-copy"],
+    ]),
+  );
+  assert.equal(value, envText([["GITHUB_TOKEN", '"synthetic-value"']]));
+  assert.throws(
+    () => githubEnvironment("APP_SETTING=x\n"),
+    /Missing GITHUB_TOKEN/,
+  );
+  assert.throws(
+    () => githubEnvironment(envText([["GITHUB_TOKEN", "'synthetic value'"]])),
+    (error: Error) => {
+      assert.match(error.message, /whitespace/);
+      assert.doesNotMatch(error.message, /synthetic/);
+      return true;
+    },
+  );
+  assert.equal(trackerEnvironment("jira", source()), jiraEnvironment(source()));
+  assert.match(
+    serviceUnit({
+      projectName,
+      tracker: "github",
+      runtime: "/tmp/work",
+      node: "/bin/node",
+      codex: "/bin/codex",
+      environment: "/tmp/env",
+    }),
+    /^Description=Demo Storylines Symphony GitHub worker$/m,
   );
 });
 

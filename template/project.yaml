@@ -9,9 +9,10 @@ project:
   owner: __OWNER__
   created: __DATE__
 
+# Features live in GitHub Issues; the board and Symphony both read them.
 tracker:
-  kind: jira
-  project_key: __TRACKER_KEY__
+  kind: github
+  repo: __REPO__
 
 runtime:
   orchestrator: symphony
@@ -28,6 +29,7 @@ labels:
   plan: symphony-plan
   ready: symphony-ready
   blocked: symphony-blocked
+  in_progress: symphony-in-progress
   human_review: symphony-human-review
   pilot_review: symphony-pilot-review
 

@@ -20,6 +20,7 @@ import { readProject, slug, vendorPath } from "./project.mjs";
 export const serviceNameFor = (projectName) =>
   `${slug(projectName)}-symphony.service`;
 const jiraKeys = ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"];
+const githubKeys = ["GITHUB_TOKEN"];
 const execute = promisify(execFile);
 const clean = (value) => {
   if (/[\u0000-\u001f\u007f]/.test(value))
@@ -44,18 +45,31 @@ const unitPath = (value) => {
   return value.replaceAll("%", "%%");
 };
 
+const envFile = (keys, values) =>
+  keys
+    .map(
+      (key) =>
+        `${key}="${values[key].replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`,
+    )
+    .join("\n") + "\n";
+
 // EnvironmentFile has no shell expansion. Only these keys cross the service boundary.
-export function jiraEnvironment(source) {
+function pickEnvironment(source, keys) {
   // parseEnv discards carriage returns; reject bare ones instead of altering a token.
   if (source.replaceAll("\r\n", "\n").includes("\r"))
     throw new Error("Credential source contains a bare carriage return");
   const input = parseEnv(source);
-  const values = Object.fromEntries(jiraKeys.map((key) => [key, input[key]]));
-  for (const key of jiraKeys) {
+  const values = Object.fromEntries(keys.map((key) => [key, input[key]]));
+  for (const key of keys) {
     if (!values[key]?.trim())
       throw new Error(`Missing ${key} in credential source`);
     clean(values[key]);
   }
+  return values;
+}
+
+export function jiraEnvironment(source) {
+  const values = pickEnvironment(source, jiraKeys);
   const base = new URL(values.JIRA_BASE_URL);
   if (
     base.protocol !== "https:" ||
@@ -69,18 +83,24 @@ export function jiraEnvironment(source) {
     );
   if (!/^[^\s@]+@[^\s@]+$/.test(values.JIRA_EMAIL))
     throw new Error("JIRA_EMAIL must be the token owner's email address");
-  return (
-    jiraKeys
-      .map(
-        (key) =>
-          `${key}="${values[key].replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`,
-      )
-      .join("\n") + "\n"
-  );
+  return envFile(jiraKeys, values);
 }
+
+export function githubEnvironment(source) {
+  const values = pickEnvironment(source, githubKeys);
+  if (/\s/.test(values.GITHUB_TOKEN))
+    throw new Error("GITHUB_TOKEN must not contain whitespace");
+  return envFile(githubKeys, values);
+}
+
+export const trackerEnvironment = (kind, source) =>
+  kind === "github" ? githubEnvironment(source) : jiraEnvironment(source);
+
+export const trackerLabel = (kind) => (kind === "github" ? "GitHub" : "Jira");
 
 export function serviceUnit({
   projectName,
+  tracker = "jira",
   runtime,
   node,
   codex,
@@ -111,7 +131,7 @@ export function serviceUnit({
     ? `Environment=${unitQuote(`GIT_SSH_COMMAND=/usr/bin/ssh -i ${shellQuote(sshIdentity)} -o IdentitiesOnly=yes -o BatchMode=yes`)}\n`
     : "";
   return `[Unit]
-Description=${projectName} Symphony Jira worker
+Description=${projectName} Symphony ${trackerLabel(tracker)} worker
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=300
@@ -276,7 +296,9 @@ async function main() {
     const sshIdentity = options["ssh-identity"];
     for (const path of [node, codex, join(runtime, ".symphony/bin/symphony")])
       await access(path, constants.X_OK);
-    const { project } = await readProject(runtime);
+    const manifest = await readProject(runtime);
+    const { project } = manifest;
+    const tracker = manifest.tracker?.kind ?? "jira";
     const serviceName = serviceNameFor(project.name);
     for (const path of [
       join(runtime, "WORKFLOW.md"),
@@ -284,12 +306,16 @@ async function main() {
       ...(sshIdentity ? [sshIdentity] : []),
     ])
       await access(path, constants.R_OK);
-    const credentials = jiraEnvironment(await readFile(source, "utf8"));
+    const credentials = trackerEnvironment(
+      tracker,
+      await readFile(source, "utf8"),
+    );
     const config = join(homedir(), ".config", slug(project.name));
     const environment = join(config, "symphony.env");
     const units = join(homedir(), ".config/systemd/user");
     const unit = serviceUnit({
       projectName: project.name,
+      tracker,
       runtime,
       node,
       codex,
@@ -305,9 +331,10 @@ async function main() {
     console.log(
       `Installed ${serviceName}; no start, restart, or enable was requested.`,
     );
-    console.log(`Private Jira credentials: ${environment} (mode 0600).`);
+    const label = trackerLabel(tracker);
+    console.log(`Private ${label} credentials: ${environment} (mode 0600).`);
     console.log(
-      "Review the eligible Jira queue before explicitly running symphony:service -- start.",
+      `Review the eligible ${label} queue before explicitly running symphony:service -- start.`,
     );
     return;
   }

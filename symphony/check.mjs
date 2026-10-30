@@ -186,19 +186,137 @@ export async function checkJira(
   };
 }
 
-// Checks WORKFLOW.md against the Project OS workflow contract and the project's
-// own values in project.yaml. Core conventions (state names, the launcher and
-// archive commands, loopback monitoring) are fixed; the rest comes from the manifest.
-export async function checkWorkflow(live = false, root = projectRoot()) {
-  const project = await readProject(root);
-  const { config, prompt } = await readWorkflow(root);
-  const labels = project.labels ?? {};
-  const runtime = project.runtime ?? {};
-  assert.equal(config.tracker.kind, "jira");
-  assert.ok(
-    config.tracker.required_labels.includes(labels.ready),
-    `required_labels must include the ready label "${labels.ready}"`,
+const githubApi = "https://api.github.com";
+
+// Read-only repository, label and polling checks for the pinned v0.0.3 GitHub
+// tracker. Never echo GitHub response bodies or the token.
+export async function checkGitHub(
+  config,
+  labels,
+  { env = process.env, fetchImpl = fetch } = {},
+) {
+  const variable = config.tracker.provider.token.slice(1);
+  const token = env[variable]?.trim();
+  assert.ok(token, `Missing ${variable}; provide it on the Symphony host`);
+  const repo = config.tracker.provider.repo;
+  const [owner, name] = repo.split("/").map(encodeURIComponent);
+  async function request(path) {
+    let response;
+    try {
+      response = await fetchImpl(`${githubApi}${path}`, {
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "project-os-symphony-check",
+        },
+      });
+    } catch {
+      throw new Error(
+        `GitHub preflight GET ${path.split("?")[0]} could not connect; check host/network access`,
+      );
+    }
+    assert.ok(
+      response.ok,
+      `GitHub preflight GET ${path.split("?")[0]} failed (HTTP ${response.status})`,
+    );
+    try {
+      return await response.json();
+    } catch {
+      throw new Error(
+        `GitHub preflight ${path.split("?")[0]} returned invalid JSON`,
+      );
+    }
+  }
+  async function pages(path) {
+    const items = [];
+    for (let page = 1; ; page++) {
+      const separator = path.includes("?") ? "&" : "?";
+      const batch = await request(
+        `${path}${separator}per_page=100&page=${page}`,
+      );
+      assert.ok(
+        Array.isArray(batch),
+        `GitHub preflight ${path.split("?")[0]} returned an invalid list`,
+      );
+      items.push(...batch);
+      if (batch.length < 100) return items;
+    }
+  }
+  const base = `/repos/${owner}/${name}`;
+  const [repository, existing, open] = await Promise.all([
+    request(base),
+    pages(`${base}/labels`),
+    // Same query as the pinned runtime's poll; labels are applied afterward.
+    pages(`${base}/issues?state=open&sort=created&direction=asc`),
+  ]);
+  assert.equal(
+    normalized(repository.full_name ?? ""),
+    normalized(repo),
+    "GitHub returned a different repository",
   );
+  assert.equal(
+    repository.has_issues,
+    true,
+    "Issues are disabled for the repository",
+  );
+  const names = new Set(existing.map((label) => normalized(label.name ?? "")));
+  const missing = Object.values(labels).filter(
+    (label) => label && !names.has(normalized(label)),
+  );
+  assert.deepEqual(missing, [], `Missing GitHub labels: ${missing.join(", ")}`);
+  const issues = open.filter((issue) => !issue.pull_request);
+  return {
+    repo,
+    labels: Object.values(labels).filter(Boolean).length,
+    polled: issues.length,
+    eligible: issues.filter((issue) =>
+      config.tracker.required_labels.every((label) =>
+        (issue.labels ?? []).some(
+          (item) => normalized(item.name ?? "") === normalized(label),
+        ),
+      ),
+    ).length,
+  };
+}
+
+// Tracker-specific parts of the workflow contract. Jira remains for projects
+// that have not moved to GitHub Issues yet.
+function checkTracker(config, project, labels) {
+  const kind = project.tracker?.kind ?? "jira";
+  assert.equal(
+    config.tracker.kind,
+    kind,
+    "WORKFLOW.md tracker.kind must match project.yaml tracker.kind",
+  );
+  if (kind === "github") {
+    assert.equal(
+      config.tracker.provider.repo,
+      project.tracker.repo,
+      "WORKFLOW.md tracker repo must match project.yaml tracker.repo",
+    );
+    assert.equal(
+      config.tracker.provider.api_url,
+      undefined,
+      "GitHub tracker must use api.github.com",
+    );
+    assert.match(
+      config.tracker.provider.token,
+      /^\$[A-Z_]+$/,
+      "Use an environment reference for token",
+    );
+    assert.deepEqual(config.tracker.active_states, ["open"]);
+    assert.deepEqual(config.tracker.terminal_states, ["closed"]);
+    for (const key of ["human_review", "in_progress"])
+      assert.ok(
+        labels[key],
+        `project.yaml labels.${key} is required for GitHub`,
+      );
+    return [labels.human_review, labels.in_progress, "Closes #"];
+  }
+  assert.equal(kind, "jira", `Unsupported tracker kind: ${kind}`);
   assert.deepEqual(config.tracker.active_states, [
     "Ready for delivery",
     "Delivery",
@@ -208,6 +326,28 @@ export async function checkWorkflow(live = false, root = projectRoot()) {
     config.tracker.provider.project_key,
     project.tracker?.project_key,
     "WORKFLOW.md project_key must match project.yaml tracker.project_key",
+  );
+  for (const key of ["base_url", "email", "api_token"])
+    assert.match(
+      config.tracker.provider[key],
+      /^\$[A-Z_]+$/,
+      `Use environment references for ${key}`,
+    );
+  return ["Impact"];
+}
+
+// Checks WORKFLOW.md against the Project OS workflow contract and the project's
+// own values in project.yaml. Core conventions (state names, the launcher and
+// archive commands, loopback monitoring) are fixed; the rest comes from the manifest.
+export async function checkWorkflow(live = false, root = projectRoot()) {
+  const project = await readProject(root);
+  const { config, prompt } = await readWorkflow(root);
+  const labels = project.labels ?? {};
+  const runtime = project.runtime ?? {};
+  const trackerPhrases = checkTracker(config, project, labels);
+  assert.ok(
+    config.tracker.required_labels.includes(labels.ready),
+    `required_labels must include the ready label "${labels.ready}"`,
   );
   assert.equal(
     config.agent.max_concurrent_agents,
@@ -224,12 +364,6 @@ export async function checkWorkflow(live = false, root = projectRoot()) {
   assert.equal(config.codex.approval_policy, "never");
   assert.equal(config.codex.thread_sandbox, "workspace-write");
   assert.equal(config.codex.turn_sandbox_policy.networkAccess, true);
-  for (const key of ["base_url", "email", "api_token"])
-    assert.match(
-      config.tracker.provider[key],
-      /^\$[A-Z_]+$/,
-      `Use environment references for ${key}`,
-    );
   assert.ok(config.hooks.after_create.includes("git clone"));
   if (runtime.setup_command)
     assert.ok(
@@ -240,28 +374,30 @@ export async function checkWorkflow(live = false, root = projectRoot()) {
   for (const phrase of [
     "{{ issue.identifier }}",
     "Agent Workpad",
-    "Impact",
+    ...trackerPhrases,
     labels.blocked,
     labels.pilot_review,
     "match-head-commit",
     ...(runtime.verify_command ? [runtime.verify_command] : []),
   ])
     assert.ok(prompt.includes(phrase), `Missing workflow contract: ${phrase}`);
-  let jira;
-  if (live) {
-    await access(join(root, ".symphony/bin/symphony"), constants.X_OK);
-    jira = await checkJira(config);
-  }
-  return { ...(jira ? { jira } : {}) };
+  if (!live) return {};
+  await access(join(root, ".symphony/bin/symphony"), constants.X_OK);
+  return config.tracker.kind === "github"
+    ? { github: await checkGitHub(config, labels) }
+    : { jira: await checkJira(config) };
 }
 
 export async function main() {
   try {
     const result = await checkWorkflow(process.argv.includes("--live"));
+    const { jira, github } = result;
     console.log(
-      result.jira
-        ? `Workflow and live Jira verified: ${result.jira.projectKey}, ${result.jira.permissions} required permissions, ${result.jira.polled} polled issues (${result.jira.eligible} labelled candidates on first page). No Jira content changed.`
-        : "Workflow structure verified; live Jira and task execution require separate checks.",
+      jira
+        ? `Workflow and live Jira verified: ${jira.projectKey}, ${jira.permissions} required permissions, ${jira.polled} polled issues (${jira.eligible} labelled candidates on first page). No Jira content changed.`
+        : github
+          ? `Workflow and live GitHub verified: ${github.repo}, ${github.labels} labels present, ${github.polled} open issues (${github.eligible} labelled candidates). No GitHub content changed.`
+          : "Workflow structure verified; the live tracker and task execution require separate checks.",
     );
   } catch (error) {
     console.error(`Symphony preflight failed: ${error.message}`);

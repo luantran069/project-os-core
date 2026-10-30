@@ -20,7 +20,7 @@ project-os-core/          repo này
   gates/                  bốn cổng duyệt và cách gắn nhãn trên tracker
   playbooks/              bài học dùng chung, rút từ các dự án
   template/               bộ khung cho dự án mới
-  symphony/               bộ điều phối: chạy agent theo ticket Jira
+  symphony/               bộ điều phối: chạy agent theo feature (GitHub Issues)
   scripts/                tạo dự án mới, đồng bộ lõi vào dự án, kiểm tra dự án
   docs/                   kiến trúc, cách đưa good-ideas về dùng lõi
 
@@ -40,7 +40,7 @@ Cần Node 22.18 trở lên. Chạy `npm ci` trong lõi một lần trước.
 
 ```bash
 node scripts/new-project.mjs ../my-app \
-  --name "My App" --repo luantran069/my-app --tracker-key MA --owner "Luan Tran"
+  --name "My App" --repo luantran069/my-app --owner "Luan Tran"
 node scripts/check-project.mjs ../my-app
 ```
 
