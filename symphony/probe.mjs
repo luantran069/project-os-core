@@ -48,6 +48,37 @@ const jiraRest = {
   },
 };
 
+// Same for GitHub.AgentTool.tool_specs/0 in v0.0.3.
+const githubApi = {
+  name: "github_api",
+  description:
+    "Execute a GitHub REST API request using Symphony's configured auth.\n",
+  inputSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["method", "path"],
+    properties: {
+      method: {
+        type: "string",
+        enum: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+        description: "GitHub REST method.",
+      },
+      path: {
+        type: "string",
+        description:
+          "GitHub REST path such as /repos/owner/repo/issues/1/comments.",
+      },
+      params: {
+        type: ["object", "null"],
+        description: "Optional query parameters.",
+        additionalProperties: true,
+      },
+      body: { description: "Optional JSON request body." },
+    },
+  },
+};
+const trackerTools = { jira: jiraRest, github: githubApi };
+
 let child;
 let lines;
 let timeout;
@@ -141,6 +172,9 @@ try {
   assert.ok(Array.isArray(loaded.data), "Invalid loaded-thread list response");
   // v0.0.3's omitted policy is incompatible with some newer Codex releases.
   // Test the real thread/start contract, rather than stopping at initialize.
+  const kind = config.tracker?.kind ?? "jira";
+  const tool = trackerTools[kind];
+  assert.ok(tool, `Unsupported tracker kind: ${kind}`);
   const approvalPolicy = config.codex.approval_policy ?? {
     reject: {
       sandbox_approval: true,
@@ -152,14 +186,14 @@ try {
     approvalPolicy,
     sandbox: config.codex.thread_sandbox ?? "workspace-write",
     cwd: root,
-    dynamicTools: [jiraRest],
+    dynamicTools: [tool],
     ephemeral: true,
   });
   assert.ok(started?.thread?.id, "Missing ephemeral thread ID");
   assert.deepEqual(started.approvalPolicy, approvalPolicy);
   assert.equal(started.sandbox?.type, "workspaceWrite");
   console.log(
-    "Codex stdio probe passed: pinned initialization, loaded-thread listing, and an ephemeral thread with the configured approval policy, workspace-write sandbox and pinned Jira tool were accepted. No model turn or Jira request was made; dispatch and task execution remain unverified.",
+    `Codex stdio probe passed: pinned initialization, loaded-thread listing, and an ephemeral thread with the configured approval policy, workspace-write sandbox and pinned ${tool.name} tool were accepted. No model turn or tracker request was made; dispatch and task execution remain unverified.`,
   );
 } catch (error) {
   console.error(`Codex stdio probe failed: ${error.message}`);

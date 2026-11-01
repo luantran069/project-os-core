@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 const run = promisify(execFile);
 const repository = fileURLToPath(new URL("../", import.meta.url));
 
-async function fixture(approval: string) {
+async function fixture(approval: string, tracker = "") {
   const directory = await mkdtemp(join(tmpdir(), "symphony-probe-"));
   const vendored = join(directory, ".project-os/symphony");
   await mkdir(vendored, { recursive: true });
@@ -35,7 +35,7 @@ async function fixture(approval: string) {
   );
   await writeFile(
     join(directory, "WORKFLOW.md"),
-    `---\ncodex:\n  command: node .project-os/symphony/codex.mjs\n  approval_policy: ${approval}\n  thread_sandbox: workspace-write\n---\nFixture\n`,
+    `---\n${tracker ? `tracker:\n  kind: ${tracker}\n` : ""}codex:\n  command: node .project-os/symphony/codex.mjs\n  approval_policy: ${approval}\n  thread_sandbox: workspace-write\n---\nFixture\n`,
   );
   // A process fixture exercises the real probe's request/response and shutdown
   // handling. It rejects the historical policy exactly where the real CLI does.
@@ -121,6 +121,32 @@ test("Codex probe verifies the configured policy and actual pinned Jira tool in 
       await readFile(join(host.directory, "stopped"), "utf8"),
       "yes",
     );
+  } finally {
+    await rm(host.directory, { recursive: true, force: true });
+  }
+});
+
+test("Codex probe sends the pinned GitHub tool for GitHub projects", async () => {
+  const host = await fixture("never", "github");
+  try {
+    const result = await host.execute();
+    assert.match(result.stdout, /pinned github_api tool/);
+    const requests = (
+      await readFile(join(host.directory, "requests.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const [tool] = requests[3].params.dynamicTools;
+    assert.equal(tool.name, "github_api");
+    assert.deepEqual(tool.inputSchema.properties.method.enum, [
+      "GET",
+      "POST",
+      "PATCH",
+      "PUT",
+      "DELETE",
+    ]);
+    assert.ok("params" in tool.inputSchema.properties);
   } finally {
     await rm(host.directory, { recursive: true, force: true });
   }

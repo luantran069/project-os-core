@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 (2026-11-01)
+
+- `symphony:probe` sends the pinned `github_api` tool for GitHub projects instead
+  of always the Jira tool, matching what Symphony v0.0.3 sends.
+
 ## 0.3.0 (2026-10-30)
 
 Features can live in GitHub Issues instead of Jira, as the data source for the
