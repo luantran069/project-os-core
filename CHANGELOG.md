@@ -8,6 +8,7 @@
 - Documentation is in English (README and every file in `docs/`).
 - `docs/bootstrap-prompt.md`: a prompt that lets an agent set up a new project
   from an empty git repository.
+- `docs/adopt-prompt.md`: the same for a repository that already has code.
 
 ## 0.3.1 (2026-11-01)
 
