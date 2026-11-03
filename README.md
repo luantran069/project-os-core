@@ -90,6 +90,7 @@ Details and the matching tracker labels: [`gates/README.md`](gates/README.md).
 - [Project board](docs/board.md): what the board shows and how to deploy it.
 - [Moving from Jira to GitHub Issues](docs/migrate-from-jira.md).
 - [Bootstrap prompt](docs/bootstrap-prompt.md): let an agent set up a new project from an empty repository.
+- [Adopt prompt](docs/adopt-prompt.md): let an agent put an existing repository on the core.
 - [Moving good-ideas onto the core](docs/adopting-good-ideas.md): what was
   extracted, what stays in good-ideas, next steps.
 - [Agent roles](agents/README.md).
