@@ -5,8 +5,18 @@ kế hoạch chi tiết, code, kiểm tra và bàn giao. Chủ dự án chỉ du
 hướng đi, kế hoạch tính năng, phát hành và nội dung công khai.
 
 Phiên bản hiện tại: xem [`VERSION`](VERSION). Lõi v0 được rút ra từ quy trình
-đang chạy thật trong [good-ideas](https://github.com/luantran069/good-ideas)
-(Symphony + Codex + Jira), sau đó tách phần riêng của Investment Storylines ra.
+đang chạy thật trong good-ideas (repo riêng tư; Symphony + Codex + Jira), sau đó
+tách phần riêng của Investment Storylines ra.
+
+Repo này công khai theo giấy phép [MIT](LICENSE). Mọi máy (máy cá nhân, máy worker,
+phiên Claude) lấy lõi bằng `git clone` thường, không cần token:
+
+```bash
+git clone https://github.com/luantran069/project-os-core.git
+```
+
+Không bao giờ commit token, file `.env` hay thông tin riêng của một dự án vào đây.
+Phần riêng (đường dẫn máy chủ, tài khoản, dữ liệu) nằm trong repo của từng dự án.
 
 ## Lõi và dự án
 
@@ -37,7 +47,7 @@ my-app/                   một dự án tạo từ template
 
 ## Bắt đầu một dự án mới
 
-Cần Node 22.18 trở lên. Chạy `npm ci` trong lõi một lần trước.
+Cần Node 22.18 trở lên. Clone lõi (lệnh ở trên) và chạy `npm ci` trong lõi một lần trước.
 
 ```bash
 node scripts/new-project.mjs ../my-app \
