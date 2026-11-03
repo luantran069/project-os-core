@@ -1,68 +1,75 @@
-# Symphony trong lõi
+# Symphony in the core
 
-Symphony là bộ điều phối của Project OS. Nó đọc tracker của dự án (GitHub Issues
-từ lõi 0.3.0, hoặc Jira với dự án chưa chuyển), giao từng feature đã duyệt
-cho một agent Codex chạy trong bản sao repo riêng, và lưu lại workspace khi ticket
-xong. Mã điều khiển Symphony nằm ở [`symphony/`](../symphony/) của lõi; dự án không
-tự viết phần này.
+Symphony is the Project OS orchestrator. It reads the project's tracker (GitHub
+Issues since core 0.3.0, or Jira for projects that have not moved), hands each
+approved feature to a Codex agent running in its own clone of the repository, and
+archives the workspace when the ticket is done. The Symphony control code lives in
+[`symphony/`](../symphony/) of the core; projects do not write it themselves.
 
-## Lõi cung cấp gì
+## What the core provides
 
-| File           | Lệnh trong dự án           | Việc làm                                                                                                             |
-| -------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `runtime.json` | —                          | Ghim bản Symphony v0.0.3 và mã SHA-256 cho từng nền tảng.                                                            |
-| `setup.mjs`    | `npm run symphony:setup`   | Tải bản Symphony đã ghim về `.symphony/bin` và kiểm tra checksum.                                                    |
-| `check.mjs`    | `npm run symphony:check`   | Đối chiếu `WORKFLOW.md` với hợp đồng của lõi và `project.yaml`. Thêm `-- --live` để kiểm tra tracker thật (chỉ đọc). |
-| `probe.mjs`    | `npm run symphony:probe`   | Thử khởi tạo `codex app-server` trên máy worker, không chạy lượt nào.                                                |
-| `codex.mjs`    | (Symphony gọi)             | Cầu nối tới Codex; chỉ mở quyền ghi cho `.git` của chính ticket.                                                     |
-| `archive.mjs`  | (hook `before_remove`)     | Giữ lại repo và worktree của ticket trong `.symphony/archives`.                                                      |
-| `start.mjs`    | `npm run symphony:start`   | Kiểm tra trực tiếp rồi chạy Symphony với `WORKFLOW.md`.                                                              |
-| `service.mjs`  | `npm run symphony:service` | Cài và điều khiển dịch vụ systemd của người dùng cho worker.                                                         |
-| `project.mjs`  | —                          | Đọc `project.yaml` và `WORKFLOW.md`, dùng chung cho các file trên.                                                   |
+| File           | Command in the project     | What it does                                                                                                              |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `runtime.json` | —                          | Pins Symphony v0.0.3 and the SHA-256 of each platform build.                                                              |
+| `setup.mjs`    | `npm run symphony:setup`   | Downloads the pinned Symphony build into `.symphony/bin` and verifies the checksum.                                       |
+| `check.mjs`    | `npm run symphony:check`   | Checks `WORKFLOW.md` against the core contract and `project.yaml`. Add `-- --live` to check the real tracker (read only). |
+| `probe.mjs`    | `npm run symphony:probe`   | Starts `codex app-server` on the worker host without running a turn.                                                      |
+| `codex.mjs`    | (called by Symphony)       | Bridge to Codex; opens write access only to the ticket's own `.git`.                                                      |
+| `archive.mjs`  | (`before_remove` hook)     | Keeps the ticket's repository and worktrees under `.symphony/archives`.                                                   |
+| `start.mjs`    | `npm run symphony:start`   | Runs the live checks, then starts Symphony with `WORKFLOW.md`.                                                            |
+| `service.mjs`  | `npm run symphony:service` | Installs and controls the worker's systemd user service.                                                                  |
+| `project.mjs`  | —                          | Reads `project.yaml` and `WORKFLOW.md`; shared by the files above.                                                        |
 
-Mọi lệnh chạy từ thư mục gốc của dự án. Tên dịch vụ và thư mục chứa thông tin
-đăng nhập tracker lấy từ `project.name`, ví dụ "Investment Storylines" thành
-`investment-storylines-symphony.service` và `~/.config/investment-storylines/`.
+Run every command from the project root. The service name and the directory that
+holds the tracker credentials come from `project.name`, for example "Investment
+Storylines" becomes `investment-storylines-symphony.service` and
+`~/.config/investment-storylines/`.
 
-## Cách dự án nhận các file này
+## How a project receives these files
 
-`scripts/sync-project.mjs <dự án>` chép `symphony/` vào `.project-os/symphony/`
-của dự án, ghi mã băm vào `.project-os/core.json` và ghim `core.version` trong
-`project.yaml`. Dự án commit các file này, nên worker, Docker và các bản sao của
-ticket không cần quyền truy cập repo lõi.
+`scripts/sync-project.mjs <project>` copies `symphony/` into the project's
+`.project-os/symphony/`, records hashes in `.project-os/core.json` and pins
+`core.version` in `project.yaml`. The project commits these files, so the worker,
+Docker and ticket clones never need to fetch the core.
 
-Không sửa file trong `.project-os/` ở dự án. `check-project` báo lỗi khi một file
-khác với mã băm đã ghi. Muốn đổi thì sửa trong lõi, tăng phiên bản, rồi sync lại.
+Do not edit files under `.project-os/` in a project. `check-project` fails when a
+file differs from its recorded hash. To change one, change it in the core, bump
+the version and sync again.
 
-## Những gì dự án tự khai báo
+## What the project declares
 
-Trong `project.yaml`:
+In `project.yaml`:
 
-- `tracker.kind`: `github` (mặc định cho dự án mới) hoặc `jira`; phải khớp với
+- `tracker.kind`: `github` (default for new projects) or `jira`; must match
   `WORKFLOW.md`.
-- Với GitHub: `tracker.repo` phải khớp `tracker.provider.repo`, token đọc từ biến
-  môi trường (`token: $GITHUB_TOKEN`), trạng thái là `open` / `closed`, và cần
-  nhãn `labels.in_progress`, `labels.human_review`. Với Jira: `tracker.project_key`.
-- `runtime.max_concurrent_agents`, `runtime.max_turns`: phải khớp với `WORKFLOW.md`.
-- `runtime.setup_command` (ví dụ `npm ci`): phải có trong hook `after_create`.
-- `runtime.verify_command` (ví dụ `npm run verify`): phải có trong prompt của agent.
-- `labels.*`: nhãn `ready` phải nằm trong `required_labels`; nhãn `blocked` và
-  `pilot_review` phải được nhắc trong prompt.
+- For GitHub: `tracker.repo` must match `tracker.provider.repo`, the token is read
+  from an environment variable (`token: $GITHUB_TOKEN`), states are `open` /
+  `closed`, and the labels `labels.in_progress` and `labels.human_review` are
+  required. For Jira: `tracker.project_key`.
+- `runtime.max_concurrent_agents`, `runtime.max_turns`: must match `WORKFLOW.md`.
+- `runtime.setup_command` (for example `npm ci`): must appear in the
+  `after_create` hook.
+- `runtime.verify_command` (for example `npm run verify`): must appear in the
+  agent prompt.
+- `labels.*`: the `ready` label must be in `required_labels`; the `blocked` and
+  `pilot_review` labels must be mentioned in the prompt.
 
-Phần lõi cố định: trạng thái của tracker (GitHub: `open`, `closed`; Jira:
-`Ready for delivery`, `Delivery`, `Impact`, `Done`), lệnh `node .project-os/symphony/codex.mjs`, hook lưu trữ, và cổng giám
-sát chỉ nghe trên `127.0.0.1`.
+Fixed by the core: the tracker states (GitHub: `open`, `closed`; Jira:
+`Ready for delivery`, `Delivery`, `Impact`, `Done`), the command
+`node .project-os/symphony/codex.mjs`, the archive hook, and the monitoring port
+listening only on `127.0.0.1`.
 
 ## GitHub Issues
 
-Symphony v0.0.3 đọc mọi issue đang mở của `tracker.repo` mỗi 30 giây và chỉ giao
-issue có nhãn `ready`. Agent cập nhật issue qua công cụ `github_api` của Symphony,
-dùng chung token với bộ đọc. Cách các giai đoạn ánh xạ sang nhãn nằm ở
-[gates/README.md](../gates/README.md#github-issues-tracker).
+Symphony v0.0.3 reads every open issue of `tracker.repo` every 30 seconds and
+dispatches only issues with the `ready` label. The agent updates the issue through
+Symphony's `github_api` tool, which uses the same token as the reader. How stages
+map to labels is described in [gates/README.md](../gates/README.md#github-issues-tracker).
 
-Token: một fine-grained token chỉ cho repo dự án, quyền Issues đọc/ghi và
-Metadata đọc. Đặt `GITHUB_TOKEN=...` trong file nguồn rồi chạy
-`npm run symphony:service -- install --env-source <file> ...`; chỉ biến này được
-chép sang dịch vụ. `npm run symphony:check -- --live` kiểm tra repo, bật Issues,
-đủ các nhãn trong `project.yaml`, và đếm issue sẵn sàng, không ghi gì lên GitHub.
-Agent vẫn đẩy code và mở PR bằng khoá SSH và `gh` của máy worker như trước.
+Token: a fine-grained token for the project repository only, with Issues
+read/write and Metadata read. Put `GITHUB_TOKEN=...` in a source file and run
+`npm run symphony:service -- install --env-source <file> ...`; only this variable
+is copied into the service. `npm run symphony:check -- --live` checks the
+repository, that Issues are enabled, that every label in `project.yaml` exists,
+and counts ready issues, without writing to GitHub. The agent still pushes code
+and opens pull requests with the worker host's SSH key and `gh`, as before.

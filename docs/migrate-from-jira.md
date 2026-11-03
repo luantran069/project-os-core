@@ -1,29 +1,32 @@
-# Chuyển dự án từ Jira sang GitHub Issues
+# Moving a project from Jira to GitHub Issues
 
-Làm một lần cho mỗi dự án đang dùng Jira (ví dụ good-ideas với dự án IS). Chạy
-trên máy worker, nơi đã có thông tin đăng nhập Jira.
+Do this once for each project that still uses Jira (for example good-ideas with
+the IS project). Run it on the worker host, where the Jira credentials already are.
 
-1. Sync dự án lên core 0.3.0 và thêm `labels.in_progress: symphony-in-progress`
-   vào `project.yaml`. Giữ `tracker.kind: jira` cho tới bước 4.
-2. Chạy thử, không ghi gì:
+1. Sync the project to core 0.3.0 and add `labels.in_progress: symphony-in-progress`
+   to `project.yaml`. Keep `tracker.kind: jira` until step 4.
+2. Dry run, nothing is written:
 
    ```bash
    JIRA_BASE_URL=... JIRA_EMAIL=... JIRA_API_TOKEN=... GITHUB_TOKEN=... \
      npm run symphony:migrate-jira -- --jira-project IS
    ```
 
-   Lệnh in ra từng ticket sẽ thành issue nào, với nhãn nào và phụ thuộc gì.
-   Ticket đã Done chỉ được ghi vào `docs/jira-archive.md`, không thành issue.
+   The command prints which issue each ticket becomes, with which labels and
+   dependencies. Tickets already Done are only written to `docs/jira-archive.md`,
+   not turned into issues.
 
-3. Đọc danh sách. Nếu đúng, chạy lại với `--apply`. Lệnh tạo các nhãn còn thiếu,
-   tạo issue (kèm bình luận Jira, ưu tiên Roadmap thành `priority-now/next/later`,
-   phụ thuộc "Blocks" thành dòng **Phụ thuộc** trong mô tả) và ghi file lưu trữ.
-   Chạy lại lần nữa không tạo trùng: issue đã có dấu `<!-- jira:IS-12 -->` được bỏ qua.
-4. Dừng service Symphony. Đổi `project.yaml` sang `tracker: { kind: github, repo: ... }`
-   và `WORKFLOW.md` theo `template/WORKFLOW.md`. Cài lại service với file nguồn chỉ
-   chứa `GITHUB_TOKEN` (xem [Symphony trong lõi](symphony.md#github-issues)), chạy
-   `npm run symphony:check -- --live`, rồi bật service.
-5. Triển khai board theo [Board dự án](board.md) và chạy thử một feature nhỏ từ
-   đầu đến cuối. Đạt rồi mới đóng dự án Jira.
+3. Read the list. If it is right, run again with `--apply`. The command creates
+   missing labels, creates the issues (with the Jira comments, Roadmap priority as
+   `priority-now/next/later`, and "Blocks" links as a **Dependencies** line in the
+   description) and writes the archive file. Running it again creates no
+   duplicates: an issue that already carries `<!-- jira:IS-12 -->` is skipped.
+4. Stop the Symphony service. Change `project.yaml` to
+   `tracker: { kind: github, repo: ... }` and `WORKFLOW.md` to follow
+   `template/WORKFLOW.md`. Reinstall the service with a source file that holds only
+   `GITHUB_TOKEN` (see [Symphony in the core](symphony.md#github-issues)), run
+   `npm run symphony:check -- --live`, then start the service.
+5. Deploy the board per [Project board](board.md) and run one small feature end to
+   end. Close the Jira project only after that works.
 
-Token GitHub cho bước 2–3 cần quyền Issues đọc/ghi trên repo dự án.
+The GitHub token for steps 2 and 3 needs Issues read/write on the project repository.
