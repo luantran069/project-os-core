@@ -1,32 +1,31 @@
-# Đưa good-ideas về dùng lõi
+# Moving good-ideas onto the core
 
-good-ideas là dự án thử đầu tiên. Lõi v0 được rút ra từ commit `8574f71` của nó.
+good-ideas is the first pilot project. Core v0 was extracted from its commit `8574f71`.
 
-## Đã rút ra
+## Extracted
 
-| Trong good-ideas                 | Trong lõi                                        | Thay đổi                                                       |
-| -------------------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
-| `AGENTS.md` (worktree, ticket)   | `template/AGENTS.md`                             | Bỏ phần tài chính và lệnh kiểm tra riêng; để chỗ trống.        |
-| `WORKFLOW.md`                    | `template/WORKFLOW.md`                           | Bỏ tên dự án, trạng thái Jira và lệnh npm riêng; để chỗ trống. |
-| `docs/idea-planning-template.md` | `template/docs/idea-planning-template.md`        | Bỏ bảng dữ liệu tài chính, giữ hợp đồng ticket.                |
-| `docs/symphony-adoption.md`      | `gates/README.md`, `playbooks/agent-delivery.md` | Chỉ giữ phần chung: nhãn, workpad, quy tắc merge.              |
-| Nhãn `symphony-*`                | `project.yaml` → `labels`                        | Giữ nguyên tên làm mặc định để good-ideas không phải đổi gì.   |
+| In good-ideas                                            | In the core                                          | Change                                                                                                              |
+| -------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md` (worktree, ticket)                           | `template/AGENTS.md`                                 | Finance rules and project-specific checks removed; placeholders left.                                               |
+| `WORKFLOW.md`                                            | `template/WORKFLOW.md`                               | Project name, Jira states and project npm commands removed; placeholders left.                                      |
+| `docs/idea-planning-template.md`                         | `template/docs/idea-planning-template.md`            | Finance data tables removed; ticket contract kept.                                                                  |
+| `docs/symphony-adoption.md`                              | `gates/README.md`, `playbooks/agent-delivery.md`     | Only the general parts kept: labels, workpad, merge rules.                                                          |
+| `symphony-*` labels                                      | `project.yaml` → `labels`                            | Names kept as defaults so good-ideas changes nothing.                                                               |
+| `scripts/symphony-*.mjs`, `symphony-runtime.json`, tests | `symphony/`, `tests/symphony-*.test.ts` (core 0.2.0) | Service name, config directory and `WORKFLOW.md` check values come from `project.yaml` instead of being hard-coded. |
 
-| `scripts/symphony-*.mjs`, `symphony-runtime.json`, bài test | `symphony/`, `tests/symphony-*.test.ts` (lõi 0.2.0) | Tên dịch vụ, thư mục cấu hình và các giá trị kiểm tra `WORKFLOW.md` lấy từ `project.yaml` thay vì viết cứng. |
+## Still in good-ideas
 
-## Còn lại trong good-ideas
+- All finance data rules and the Investment Storylines services.
+- The worker host runbook (`docs/symphony-service.md`), because it records paths
+  and accounts specific to that machine.
 
-- Toàn bộ quy tắc dữ liệu tài chính và các dịch vụ của Investment Storylines.
-- Runbook vận hành worker trên máy chủ (`docs/symphony-service.md`), vì nó ghi
-  đường dẫn và tài khoản cụ thể của máy đó.
+## Steps for good-ideas to use the core
 
-## Các bước để good-ideas dùng lõi
+Each step is a small pull request in good-ideas; none changes the behaviour of
+the running agent:
 
-Mỗi bước là một pull request nhỏ trong good-ideas, không bước nào đổi hành vi
-của agent đang chạy:
-
-1. Thêm `project.yaml` với `core.version: 0.1.0`, nhãn `symphony-*`, tracker `IS`.
-2. Thêm `memory/` (vision, state, learnings, decisions) và chuyển các quyết định
-   đã có trong `docs/` thành ADR khi cần.
-3. Chạy `node <lõi>/scripts/check-project.mjs .` và sửa đến khi qua.
-4. Sau đó mới cân nhắc chuyển script Symphony sang lõi.
+1. Add `project.yaml` with `core.version: 0.1.0`, `symphony-*` labels, tracker `IS`.
+2. Add `memory/` (vision, state, learnings, decisions) and turn existing
+   decisions in `docs/` into ADRs where useful.
+3. Run `node <core>/scripts/check-project.mjs .` and fix until it passes.
+4. Only then consider moving the Symphony scripts into the core.

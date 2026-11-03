@@ -5,6 +5,9 @@
 - The repository is public under the MIT license (`LICENSE`). Clone the core
   over HTTPS without a token; projects still vendor `.project-os/` with
   `sync-project`, so nothing changes for existing projects.
+- Documentation is in English (README and every file in `docs/`).
+- `docs/bootstrap-prompt.md`: a prompt that lets an agent set up a new project
+  from an empty git repository.
 
 ## 0.3.1 (2026-11-01)
 
