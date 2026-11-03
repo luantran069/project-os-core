@@ -1,6 +1,6 @@
 # Repository guidance
 
-This project uses Project OS core **CORE_VERSION** (see `project.yaml`). Agent
+This project uses Project OS core `__CORE_VERSION__` (see `project.yaml`). Agent
 roles, gates and the delivery playbook live in
 [project-os-core](https://github.com/luantran069/project-os-core).
 
