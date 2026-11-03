@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The repository is public under the MIT license (`LICENSE`). Clone the core
+  over HTTPS without a token; projects still vendor `.project-os/` with
+  `sync-project`, so nothing changes for existing projects.
+
 ## 0.3.1 (2026-11-01)
 
 - `symphony:probe` sends the pinned `github_api` tool for GitHub projects instead
