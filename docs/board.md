@@ -48,6 +48,25 @@ repository. On GitHub it shows for people signed in with access. An agent reads 
 Images stay on the branch after their issue closes. Anyone who can read the repository
 can read them, so do not attach secrets or personal data the repository should not hold.
 
+## Claude sessions
+
+The board can show the whole conversation of an agent run, so the owner can read it in
+a browser without downloading anything. The runner does two things:
+
+1. Save the session at `sessions/<run id>.jsonl` on the repository's `board-sessions`
+   branch, a branch with no shared history like `board-images`. The file is either a
+   Claude Code session file (one JSON record per line) or the execution file of
+   `anthropics/claude-code-action` (one JSON array). The run id is digits only.
+2. Comment on the issue with a link: `https://<board domain>/#session/<run id>`.
+
+The link opens the conversation after the board's login. Thinking and tool calls start
+collapsed, and any text over 20,000 characters is cut. The card shows a link for each
+such comment. The board's token needs nothing new: Contents read covers it.
+
+A session holds whatever the agent read and printed, and the branch keeps it until
+someone deletes it. Anyone who can read the repository can read it, so remove tokens
+before saving and do not do this in a public repository.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues

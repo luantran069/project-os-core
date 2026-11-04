@@ -83,6 +83,7 @@ export function fakeGitHub() {
   };
   const writes = [];
   const imageFiles = new Map();
+  const sessionFiles = new Map();
   let imageBranch = false;
   let trees = {};
   const json = (body, status = 200) => Response.json(body, { status });
@@ -180,6 +181,14 @@ export function fakeGitHub() {
       imageFiles.set(m[1], body.content);
       return json({}, 201);
     }
+    if (method === "GET" && (m = path.match(/^\/contents\/sessions\/(.+)$/))) {
+      assert.equal(url.searchParams.get("ref"), "board-sessions");
+      assert.equal(init.headers.Accept, "application/vnd.github.raw");
+      const file = sessionFiles.get(m[1]);
+      return file
+        ? new Response(file)
+        : json({ message: "secret detail" }, 404);
+    }
     if (method === "GET" && (m = path.match(/^\/contents\/(.+)$/))) {
       assert.equal(url.searchParams.get("ref"), "board-images");
       assert.equal(init.headers.Accept, "application/vnd.github.raw");
@@ -190,5 +199,5 @@ export function fakeGitHub() {
     }
     return json({ message: "unexpected" }, 500);
   };
-  return { fetchImpl, issues, pulls, writes, imageFiles };
+  return { fetchImpl, issues, pulls, writes, imageFiles, sessionFiles };
 }

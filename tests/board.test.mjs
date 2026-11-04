@@ -5,6 +5,7 @@ import {
   closedIssues,
   createGitHub,
   imageExtension,
+  parseSession,
   planAction,
   stageOf,
 } from "../board/github.mjs";
@@ -351,6 +352,154 @@ test("only image ids can be read, and only after login", () =>
     const missing = await call(`/api/images/${id}`);
     assert.equal(missing.status, 404);
     assert.doesNotMatch(JSON.stringify(missing.body), /secret detail/);
+  }));
+
+const sessionLines = [
+  { type: "queue-operation", operation: "enqueue" },
+  {
+    type: "user",
+    timestamp: "2026-11-04T10:00:00Z",
+    message: { role: "user", content: "Sửa lỗi #4" },
+  },
+  {
+    type: "user",
+    isMeta: true,
+    message: { role: "user", content: "injected context" },
+  },
+  {
+    type: "assistant",
+    timestamp: "2026-11-04T10:00:05Z",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Đọc issue trước" },
+        { type: "thinking", thinking: "" },
+        { type: "text", text: "Tôi đọc issue." },
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "Bash",
+          input: { command: "gh issue view 4", description: "Read the issue" },
+        },
+        {
+          type: "tool_use",
+          id: "t2",
+          name: "Read",
+          input: { file_path: "WORKFLOW.md" },
+        },
+      ],
+    },
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "t2", content: "file text" },
+        {
+          type: "tool_result",
+          tool_use_id: "t1",
+          is_error: true,
+          content: [
+            { type: "text", text: "not found" },
+            { type: "image", source: { data: "aGVsbG8=" } },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+test("a session reads as messages with each tool's result beside its call", () => {
+  const text = [...sessionLines.map((l) => JSON.stringify(l)), "{broken"].join(
+    "\n",
+  );
+  const entries = parseSession(text);
+  assert.deepEqual(entries, [
+    { kind: "user", text: "Sửa lỗi #4", at: "2026-11-04T10:00:00Z" },
+    { kind: "thinking", text: "Đọc issue trước", at: "2026-11-04T10:00:05Z" },
+    { kind: "assistant", text: "Tôi đọc issue.", at: "2026-11-04T10:00:05Z" },
+    {
+      kind: "tool",
+      name: "Bash",
+      summary: "Read the issue",
+      input: JSON.stringify(sessionLines[3].message.content[3].input, null, 2),
+      result: "not found\n[ảnh]",
+      error: true,
+      at: "2026-11-04T10:00:05Z",
+    },
+    {
+      kind: "tool",
+      name: "Read",
+      summary: "WORKFLOW.md",
+      input: JSON.stringify({ file_path: "WORKFLOW.md" }, null, 2),
+      result: "file text",
+      error: false,
+      at: "2026-11-04T10:00:05Z",
+    },
+  ]);
+});
+
+test("a session also reads from the Action's execution file", () => {
+  const entries = parseSession(
+    JSON.stringify([
+      { type: "system", subtype: "init" },
+      ...sessionLines.slice(1, 2),
+      { type: "result", result: "done" },
+    ]),
+  );
+  assert.deepEqual(
+    entries.map((e) => [e.kind, e.text]),
+    [["user", "Sửa lỗi #4"]],
+  );
+});
+
+test("long tool output is cut and a result with no call is kept", () => {
+  const entries = parseSession(
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "gone",
+            content: "x".repeat(20_005),
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].kind, "tool");
+  assert.equal(entries[0].result, `${"x".repeat(20_000)}\n… (cắt 5 ký tự)`);
+});
+
+test("a saved session reads through the board, only after login", () =>
+  withBoard(async ({ call, fake }) => {
+    fake.sessionFiles.set("123.jsonl", JSON.stringify(sessionLines[1]));
+    assert.equal((await call("/api/sessions/123")).status, 401);
+    await call("/api/login", { body: { password } });
+    const { status, body } = await call("/api/sessions/123");
+    assert.equal(status, 200);
+    assert.equal(body.run, "123");
+    assert.equal(body.project, "Demo");
+    assert.equal(body.repo, "example/demo-app");
+    assert.equal(body.entries[0].text, "Sửa lỗi #4");
+  }));
+
+test("only run ids can be read, and a missing session says so", () =>
+  withBoard(async ({ call }) => {
+    await call("/api/login", { body: { password } });
+    for (const path of [
+      "/api/sessions/..%2F..%2Fproject.yaml",
+      "/api/sessions/abc",
+      "/api/sessions/1.jsonl",
+    ])
+      assert.equal((await call(path, { raw: true })).status, 404);
+    const missing = await call("/api/sessions/999");
+    assert.equal(missing.status, 404);
+    assert.equal(missing.body.error, "Không có phiên Claude này");
   }));
 
 test("GitHub errors never pass the response body or token through", () =>
