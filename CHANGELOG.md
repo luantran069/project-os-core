@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 (2026-11-04)
+
+- The board shows an agent's conversation. A runner saves the session on a
+  `board-sessions` branch and links `/#session/<run id>` from the issue; the page sits
+  behind the board's login and the card links to it. See "Claude sessions" in
+  `docs/board.md`. The board's token needs nothing new. Redeploy the board after syncing.
+
 ## 0.4.0 (2026-11-04)
 
 - The board takes images. Paste, drop or choose a PNG, JPEG, GIF or WebP of up to

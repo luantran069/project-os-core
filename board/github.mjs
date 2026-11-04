@@ -183,6 +183,92 @@ export async function uploadImage(gh, repo, bytes, name, now = new Date()) {
 export const loadImage = (gh, id) =>
   gh.binary(`${gh.base}/contents/images/${id}?ref=${imageBranch}`);
 
+// A runner saves each Claude session on this branch, so the board can show it.
+export const sessionBranch = "board-sessions";
+const maxSessionText = 20_000;
+
+const cutText = (text) =>
+  text.length > maxSessionText
+    ? `${text.slice(0, maxSessionText)}\n… (cắt ${text.length - maxSessionText} ký tự)`
+    : text;
+
+const blocksOf = (content) => {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) ? content : [];
+};
+
+const resultText = (content) =>
+  blocksOf(content)
+    .map((block) => (block.type === "text" ? block.text : "[ảnh]"))
+    .join("\n");
+
+const toolSummary = ({ description, command, file_path, pattern } = {}) =>
+  String(description ?? command ?? file_path ?? pattern ?? "")
+    .split("\n")[0]
+    .slice(0, 120);
+
+// A session file has one JSON record per line. The Action's execution file holds
+// the same records as one array.
+function sessionRecords(text) {
+  const parse = (value) => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+  const whole = text.trimStart().startsWith("[") ? parse(text) : null;
+  return Array.isArray(whole) ? whole : text.split("\n").map(parse);
+}
+
+// The messages of a session in order, with each tool's result beside its call.
+export function parseSession(text) {
+  const entries = [];
+  const tools = new Map();
+  for (const record of sessionRecords(text)) {
+    if (!["user", "assistant"].includes(record?.type) || record.isMeta)
+      continue;
+    const at = record.timestamp;
+    for (const block of blocksOf(record.message?.content)) {
+      if (block.type === "text" && block.text)
+        entries.push({ kind: record.type, text: block.text, at });
+      else if (block.type === "thinking" && block.thinking)
+        entries.push({ kind: "thinking", text: block.thinking, at });
+      else if (block.type === "tool_use") {
+        const tool = {
+          kind: "tool",
+          name: block.name,
+          summary: toolSummary(block.input),
+          input: cutText(JSON.stringify(block.input ?? {}, null, 2)),
+          result: null,
+          error: false,
+          at,
+        };
+        tools.set(block.id, tool);
+        entries.push(tool);
+      } else if (block.type === "tool_result") {
+        let tool = tools.get(block.tool_use_id);
+        if (!tool) {
+          tool = { kind: "tool", name: "", summary: "", input: "", at };
+          entries.push(tool);
+        }
+        tool.result = cutText(resultText(block.content));
+        tool.error = Boolean(block.is_error);
+      }
+    }
+  }
+  return entries;
+}
+
+export const loadSession = async (gh, run) =>
+  parseSession(
+    (
+      await gh.binary(
+        `${gh.base}/contents/sessions/${run}.jsonl?ref=${sessionBranch}`,
+      )
+    ).toString("utf8"),
+  );
+
 async function pullDetails(gh, pull) {
   const sha = pull.head?.sha;
   const [checks, deployments] = await Promise.all([

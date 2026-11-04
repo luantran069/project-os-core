@@ -12,6 +12,7 @@ import {
   loadBoard,
   loadComments,
   loadImage,
+  loadSession,
   maxImageBytes,
   uploadImage,
 } from "./github.mjs";
@@ -207,6 +208,21 @@ export function createBoard({
           "Content-Type": imageTypes[image[2]],
         });
         return response.end(bytes);
+      }
+      const session = url.pathname.match(/^\/api\/sessions\/(\d{1,20})$/);
+      if (request.method === "GET" && session) {
+        const entries = await loadSession(github, session[1]).catch((error) => {
+          if (error.status === 404) return null;
+          throw error;
+        });
+        if (!entries)
+          return send(response, 404, { error: "Không có phiên Claude này" });
+        return send(response, 200, {
+          project,
+          repo,
+          run: session[1],
+          entries,
+        });
       }
       const comments = url.pathname.match(/^\/api\/features\/(\d+)\/comments$/);
       if (request.method === "GET" && comments)

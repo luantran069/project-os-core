@@ -253,6 +253,59 @@
         border-radius: 6px;
         border: 1px solid var(--line);
       }
+      .session {
+        display: grid;
+        gap: 8px;
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .session > * {
+        min-width: 0;
+      }
+      .message {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .message.user {
+        background: var(--chip);
+      }
+      .message .meta {
+        margin-bottom: 4px;
+      }
+      .text,
+      .step pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0;
+      }
+      .step {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .step summary {
+        cursor: pointer;
+        overflow-wrap: anywhere;
+      }
+      .step.failed summary {
+        color: var(--bad);
+      }
+      .step pre {
+        background: var(--bg);
+        border-radius: 6px;
+        padding: 8px;
+        margin-top: 6px;
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .step .text {
+        margin-top: 6px;
+      }
       .error {
         color: var(--bad);
         min-height: 1.2em;
@@ -343,7 +396,7 @@
               event.preventDefault();
               try {
                 await call("/api/login", { password: input.value });
-                load();
+                start();
               } catch (e) {
                 error.textContent = e.message;
               }
@@ -613,6 +666,7 @@
         });
         const notePicker = imagePicker(note, error);
         const workpad = el("div", { class: "body" }, "Đang tải bình luận…");
+        const sessions = el("p", { class: "meta" });
         const pull = feature.pull;
         const act = async (action, label, button) => {
           if (notePicker.busy()) {
@@ -711,6 +765,7 @@
             el("div", { class: "body" }, withImages(feature.body || "(trống)")),
             el("h4", {}, "Agent Workpad"),
             workpad,
+            sessions,
             actionButtons.length ? el("h4", {}, "Quyết định") : null,
             actionButtons.length ? note : null,
             actionButtons.length ? notePicker.node : null,
@@ -731,6 +786,22 @@
             const pad = comments.filter((c) => c.workpad).pop();
             workpad.replaceChildren(
               ...withImages(pad ? pad.body : "(agent chưa ghi workpad)"),
+            );
+            const runs = comments.flatMap((c) =>
+              [...c.body.matchAll(/#session\/(\d+)/g)].map((m) => m[1]),
+            );
+            sessions.replaceChildren(
+              ...[...new Set(runs)].map((run, index) =>
+                el(
+                  "a",
+                  {
+                    href: `#session/${run}`,
+                    target: "_blank",
+                    rel: "noopener",
+                  },
+                  `Phiên Claude ${index + 1}`,
+                ),
+              ),
             );
           })
           .catch((e) => (workpad.textContent = e.message));
@@ -804,9 +875,100 @@
         }
       }
 
-      load();
+      function sessionEntry(entry) {
+        if (entry.kind === "user" || entry.kind === "assistant")
+          return el(
+            "section",
+            { class: `message ${entry.kind}` },
+            el(
+              "div",
+              { class: "meta" },
+              el("strong", {}, entry.kind === "user" ? "Yêu cầu" : "Claude"),
+              when(entry.at),
+            ),
+            el("div", { class: "text" }, entry.text),
+          );
+        if (entry.kind === "thinking")
+          return el(
+            "details",
+            { class: "step" },
+            el("summary", {}, "Suy nghĩ"),
+            el("div", { class: "text" }, entry.text),
+          );
+        return el(
+          "details",
+          { class: `step${entry.error ? " failed" : ""}` },
+          el(
+            "summary",
+            {},
+            el("strong", {}, entry.name || "Kết quả"),
+            ` ${entry.summary}`,
+          ),
+          entry.input ? el("pre", {}, entry.input) : null,
+          el("pre", {}, entry.result ?? "(không có kết quả)"),
+        );
+      }
+
+      async function showSession(run) {
+        app.replaceChildren(el("p", { style: "padding:16px" }, "Đang tải…"));
+        try {
+          const session = await call(`/api/sessions/${run}`);
+          document.title = `Phiên Claude · ${session.project}`;
+          app.replaceChildren(
+            el(
+              "header",
+              {},
+              el("a", { href: "#" }, "← Board"),
+              el("h1", {}, `Phiên Claude · ${session.project}`),
+              el(
+                "a",
+                {
+                  href: safeUrl(
+                    `https://github.com/${session.repo}/actions/runs/${run}`,
+                  ),
+                  target: "_blank",
+                  rel: "noopener",
+                },
+                "Lần chạy",
+              ),
+            ),
+            el(
+              "main",
+              { class: "session" },
+              session.entries.length
+                ? session.entries.map(sessionEntry)
+                : "(phiên trống)",
+            ),
+          );
+        } catch (e) {
+          if (e.message !== "Cần đăng nhập")
+            app.replaceChildren(
+              el(
+                "div",
+                { style: "padding:16px" },
+                el("p", { class: "error" }, e.message),
+                el("a", { href: "#" }, "← Board"),
+              ),
+            );
+        }
+      }
+
+      const sessionRun = () => location.hash.match(/^#session\/(\d+)$/)?.[1];
+
+      function start() {
+        const run = sessionRun();
+        if (run) showSession(run);
+        else load();
+      }
+
+      window.addEventListener("hashchange", start);
+      start();
       setInterval(
-        () => document.visibilityState === "visible" && state.data && load(),
+        () =>
+          document.visibilityState === "visible" &&
+          state.data &&
+          !sessionRun() &&
+          load(),
         60_000,
       );
     </script>
