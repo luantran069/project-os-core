@@ -9,6 +9,21 @@
 - `docs/bootstrap-prompt.md`: a prompt that lets an agent set up a new project
   from an empty git repository.
 - `docs/adopt-prompt.md`: the same for a repository that already has code.
+- New projects no longer keep `**CORE_VERSION**`, `**PROJECT_NAME**` and
+  `**DATE**` in `AGENTS.md`, `WORKFLOW.md` and `memory/state.md`. Prettier had
+  rewritten these placeholders to bold, so `new-project` never replaced them; in
+  Markdown they now sit in backticks, which Prettier leaves alone.
+  `check-project` reports the bold form of a known placeholder, so fix any it
+  finds in an existing project by hand.
+- `check-project` and `sync-project` ignore line endings when they hash vendored
+  files, so a CRLF checkout of the core or of a project no longer reports every
+  file as edited locally. Hashes of LF files are unchanged. A project pinned from
+  a CRLF core has to run `sync-project` once more.
+- `sync-project` writes vendored files with LF and adds `.project-os/** text eol=lf`
+  to the project's `.gitattributes`. `new-project` writes LF from a CRLF core.
+- `sync-project` pins `core.version` in a CRLF `project.yaml` too.
+- The core's own `.gitattributes` checks out LF on every platform.
+- `check-project` names files with forward slashes on Windows.
 
 ## 0.3.1 (2026-11-01)
 

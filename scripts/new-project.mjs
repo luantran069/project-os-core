@@ -8,6 +8,18 @@ import { syncProject } from "./sync-project.mjs";
 const coreRoot = fileURLToPath(new URL("../", import.meta.url));
 const templateRoot = join(coreRoot, "template");
 
+// Every placeholder a template may use, written __NAME__. In Markdown keep them
+// in backticks: Prettier rewrites a bare __NAME__ to **NAME**, which is never
+// replaced.
+export const placeholders = [
+  "CORE_VERSION",
+  "PROJECT_NAME",
+  "PROJECT_SLUG",
+  "REPO",
+  "OWNER",
+  "DATE",
+];
+
 async function listFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(
@@ -50,7 +62,7 @@ export async function createProject(target, values) {
   const written = [];
   for (const source of await listFiles(templateRoot)) {
     const path = relative(templateRoot, source);
-    let text = await readFile(source, "utf8");
+    let text = (await readFile(source, "utf8")).replaceAll("\r\n", "\n");
     for (const [placeholder, value] of Object.entries(replacements))
       text = text.replaceAll(placeholder, value);
     await mkdir(join(destination, path, ".."), { recursive: true });

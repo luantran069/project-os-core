@@ -1,8 +1,9 @@
 import { access, readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { checkWorkflow } from "../symphony/check.mjs";
+import { placeholders } from "./new-project.mjs";
 import {
   coreVersion,
   manifestPath,
@@ -27,6 +28,12 @@ const compare = (a, b) => {
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
   return 0;
 };
+
+// A template placeholder, or one Prettier rewrote to bold. Other bold capitals
+// such as **IMPORTANT** are ordinary text.
+const leftoverPlaceholder = new RegExp(
+  `__[A-Z_]+__|\\*\\*(?:${placeholders.join("|")})\\*\\*`,
+);
 
 async function textFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -131,10 +138,10 @@ export async function checkProject(directory) {
   let todos = 0;
   for (const file of await textFiles(root)) {
     const text = await readFile(file, "utf8");
-    const leftover = text.match(/__[A-Z_]+__/);
+    const leftover = text.match(leftoverPlaceholder);
     if (leftover)
       errors.push(
-        `${file.slice(root.length + 1)} still contains placeholder ${leftover[0]}`,
+        `${relative(root, file).replaceAll("\\", "/")} still contains placeholder ${leftover[0]}`,
       );
     todos += text.match(/TODO\(owner\)/g)?.length ?? 0;
   }

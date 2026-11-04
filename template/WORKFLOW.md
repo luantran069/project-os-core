@@ -38,7 +38,7 @@ codex:
     networkAccess: true
 ---
 
-You are implementing one approved feature issue for **PROJECT_NAME**.
+You are implementing one approved feature issue for `__PROJECT_NAME__`.
 
 Identifier: {{ issue.identifier }}
 Title: {{ issue.title }}

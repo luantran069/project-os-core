@@ -9,7 +9,15 @@ export const modules = ["symphony", "board"];
 export const vendorPath = ".project-os";
 export const manifestPath = ".project-os/core.json";
 
-export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+// Keeps vendored files LF in a project, whatever the project's other files use.
+export const eolRule = `${vendorPath}/** text eol=lf`;
+
+const toLf = (text) => text.replaceAll("\r\n", "\n");
+
+// Git may check a text file out with CRLF and commit it with LF, so a hash covers
+// the text and not its line endings.
+export const sha256 = (text) =>
+  createHash("sha256").update(toLf(text)).digest("hex");
 
 export async function coreVersion() {
   return (await readFile(join(coreRoot, "VERSION"), "utf8")).trim();
@@ -24,9 +32,8 @@ export async function moduleFiles() {
       /\.(mjs|json|html)$|^Dockerfile$/.test(name),
     );
     for (const name of names.sort())
-      files[`${module}/${name}`] = await readFile(
-        join(coreRoot, module, name),
-        "utf8",
+      files[`${module}/${name}`] = toLf(
+        await readFile(join(coreRoot, module, name), "utf8"),
       );
   }
   return files;
@@ -40,6 +47,24 @@ ${version} by \`scripts/sync-project.mjs\`: \`symphony/\` runs the agents,
 them in the core, release a new core version, then sync this project again.
 \`check-project\` fails when a file differs from \`core.json\`.
 `;
+
+// Adds eolRule to the project's .gitattributes unless it is already there.
+async function pinLineEndings(root) {
+  const file = join(root, ".gitattributes");
+  let text = "";
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const pinned = text
+    .split(/\r?\n/)
+    .some((line) => line.trim().split(/\s+/).join(" ") === eolRule);
+  if (pinned) return;
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const separator = text === "" || text.endsWith("\n") ? "" : eol;
+  await writeFile(file, `${text}${separator}${eolRule}${eol}`);
+}
 
 // Copies the core's modules (Symphony and the board) into a project and pins project.yaml to
 // this core version. Re-running it on the same version changes nothing.
@@ -57,6 +82,7 @@ export async function syncProject(target) {
   for (const [name, text] of Object.entries(files))
     await writeFile(join(root, vendorPath, name), text);
   await writeFile(join(root, ".project-os/README.md"), readme(version));
+  await pinLineEndings(root);
   await writeFile(
     join(root, manifestPath),
     `${JSON.stringify(
@@ -76,7 +102,7 @@ export async function syncProject(target) {
   );
 
   const pinned = manifest.replace(
-    /^(core:\s*\n(?:[ \t]+.*\n)*?[ \t]+version:[ \t]*)\S+/m,
+    /^(core:\s*\n(?:[ \t]+.*\r?\n)*?[ \t]+version:[ \t]*)\S+/m,
     `$1${version}`,
   );
   if (pinned === manifest && !manifest.match(/^core:[\s\S]*?version:/m))

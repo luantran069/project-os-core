@@ -30,7 +30,9 @@ Storylines" becomes `investment-storylines-symphony.service` and
 `scripts/sync-project.mjs <project>` copies `symphony/` into the project's
 `.project-os/symphony/`, records hashes in `.project-os/core.json` and pins
 `core.version` in `project.yaml`. The project commits these files, so the worker,
-Docker and ticket clones never need to fetch the core.
+Docker and ticket clones never need to fetch the core. It also adds
+`.project-os/** text eol=lf` to the project's `.gitattributes`, so these files stay
+LF on every platform; the recorded hashes ignore line endings either way.
 
 Do not edit files under `.project-os/` in a project. `check-project` fails when a
 file differs from its recorded hash. To change one, change it in the core, bump
