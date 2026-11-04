@@ -7,8 +7,13 @@ import {
   applyAction,
   createGitHub,
   createIdea,
+  imageExtension,
+  imageTypes,
   loadBoard,
   loadComments,
+  loadImage,
+  maxImageBytes,
+  uploadImage,
 } from "./github.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
@@ -171,6 +176,37 @@ export function createBoard({
           loadedAt: new Date(cache.at).toISOString(),
           ...cache.data,
         });
+      }
+      if (route === "POST /api/images") {
+        // Base64 makes the request about a third larger than the image.
+        const body = await readJson(
+          request,
+          Math.ceil((maxImageBytes * 4) / 3) + 4096,
+        );
+        const bytes = Buffer.from(String(body.data ?? ""), "base64");
+        if (bytes.length > maxImageBytes)
+          return send(response, 413, { error: "Ảnh tối đa 5 MB" });
+        if (!imageExtension(bytes))
+          return send(response, 400, {
+            error: "Chỉ nhận ảnh PNG, JPEG, GIF hoặc WebP",
+          });
+        return send(
+          response,
+          201,
+          await uploadImage(github, repo, bytes, body.name),
+        );
+      }
+      const image = url.pathname.match(
+        /^\/api\/images\/(\d{4}-\d{2}\/[a-f0-9]{32}\.(png|jpg|gif|webp))$/,
+      );
+      if (request.method === "GET" && image) {
+        const bytes = await loadImage(github, image[1]);
+        response.writeHead(200, {
+          ...securityHeaders,
+          "Cache-Control": "private, max-age=604800, immutable",
+          "Content-Type": imageTypes[image[2]],
+        });
+        return response.end(bytes);
       }
       const comments = url.pathname.match(/^\/api\/features\/(\d+)\/comments$/);
       if (request.method === "GET" && comments)

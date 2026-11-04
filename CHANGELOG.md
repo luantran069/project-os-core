@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-04)
 
+- The board takes images. Paste, drop or choose a PNG, JPEG, GIF or WebP of up to
+  5 MB in a new idea or a decision note. Images are stored on a `board-images` branch
+  with no shared history, shown on the card, and written into the issue as Markdown.
+  The board's token needs nothing new: Contents read/write already covers it.
+  Redeploy the board after syncing.
 - The repository is public under the MIT license (`LICENSE`). Clone the core
   over HTTPS without a token; projects still vendor `.project-os/` with
   `sync-project`, so nothing changes for existing projects.

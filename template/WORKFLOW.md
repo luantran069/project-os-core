@@ -89,6 +89,10 @@ the blocker in the workpad, remove `symphony-ready` and `symphony-in-progress`,
 and add `symphony-blocked`. Leave the issue open. If tracker writes fail, stop
 and report.
 
+An image in an issue or comment that links to the `board-images` branch is part of
+the task. Read it with `gh api "repos/<repo>/contents/images/<id>?ref=board-images"
+-H "Accept: application/vnd.github.raw"`, saved to a file outside the repository.
+
 ## Implementation
 
 For new work, fetch `origin/master` and create the task worktree inside this

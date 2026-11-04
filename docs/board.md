@@ -31,10 +31,27 @@ the commit on screen; if the agent has just pushed a new commit, GitHub rejects
 the merge and the board shows the error. "Stop" on Idea, Plan, In review and
 Blocked closes the issue (the work is dropped).
 
+## Images
+
+A new idea and a decision note both take images: paste, drop or choose a PNG, JPEG,
+GIF or WebP of up to 5 MB. The board checks the file's bytes, so an SVG or a renamed
+file is refused. Each image is stored on the repository's `board-images` branch, which
+has no shared history with the default branch, and its Markdown goes into the text:
+
+    ![name](https://github.com/owner/repo/blob/board-images/images/2026-11/<id>.png?raw=true)
+
+The board shows the image by loading it through its own login, so it works for a private
+repository. On GitHub it shows for people signed in with access. An agent reads it with:
+
+    gh api "repos/owner/repo/contents/images/2026-11/<id>.png?ref=board-images"       -H "Accept: application/vnd.github.raw" > image.png
+
+Images stay on the branch after their issue closes. Anyone who can read the repository
+can read them, so do not attach secrets or personal data the repository should not hold.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues
-   read/write, Pull requests read/write, Contents read/write (to merge), Checks
+   read/write, Pull requests read/write, Contents read/write (to merge and to store images), Checks
    read, Deployments read, Metadata read. This token belongs to the board and is
    separate from Symphony's token.
 2. In Dokploy, create an Application from the project repository, build type

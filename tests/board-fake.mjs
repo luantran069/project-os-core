@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+
 // In-memory stand-in for the parts of the GitHub REST API the board uses.
 export const labels = {
   idea: "symphony-idea",
@@ -80,11 +82,14 @@ export function fakeGitHub() {
     ],
   };
   const writes = [];
+  const imageFiles = new Map();
+  let imageBranch = false;
+  let trees = {};
   const json = (body, status = 200) => Response.json(body, { status });
   const fetchImpl = async (input, init = {}) => {
     const url = new URL(input);
     const method = init.method ?? "GET";
-    const path = url.pathname.replace("/repos/example/demo-app", "");
+    const path = decodeURI(url.pathname).replace("/repos/example/demo-app", "");
     const body = init.body ? JSON.parse(init.body) : null;
     if (method !== "GET") writes.push({ method, path, body });
     let m;
@@ -152,7 +157,38 @@ export function fakeGitHub() {
       issues.push(issue);
       return json(issue, 201);
     }
+    if (method === "GET" && path === "/git/ref/heads/board-images")
+      return imageBranch ? json({ object: { sha: "tip" } }) : json({}, 404);
+    if (method === "POST" && path === "/git/blobs")
+      return json({ sha: body.content }, 201);
+    if (method === "POST" && path === "/git/trees") {
+      trees = body.tree;
+      return json({ sha: "tree" }, 201);
+    }
+    if (method === "POST" && path === "/git/commits") {
+      assert.deepEqual(body.parents, []);
+      return json({ sha: "first" }, 201);
+    }
+    if (method === "POST" && path === "/git/refs") {
+      assert.equal(body.ref, "refs/heads/board-images");
+      imageBranch = true;
+      for (const entry of trees) imageFiles.set(entry.path, entry.sha);
+      return json({}, 201);
+    }
+    if (method === "PUT" && (m = path.match(/^\/contents\/(.+)$/))) {
+      if (body.branch !== "board-images" || !imageBranch) return json({}, 404);
+      imageFiles.set(m[1], body.content);
+      return json({}, 201);
+    }
+    if (method === "GET" && (m = path.match(/^\/contents\/(.+)$/))) {
+      assert.equal(url.searchParams.get("ref"), "board-images");
+      assert.equal(init.headers.Accept, "application/vnd.github.raw");
+      const file = imageFiles.get(m[1]);
+      return file
+        ? new Response(Buffer.from(file, "base64"))
+        : json({ message: "secret detail" }, 404);
+    }
     return json({ message: "unexpected" }, 500);
   };
-  return { fetchImpl, issues, pulls, writes };
+  return { fetchImpl, issues, pulls, writes, imageFiles };
 }

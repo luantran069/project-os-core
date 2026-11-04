@@ -1,5 +1,6 @@
 // Reads features (GitHub issues) and their pull requests for the board, and
 // turns the owner's decisions into label changes, comments and merges.
+import { randomBytes } from "node:crypto";
 
 const api = "https://api.github.com";
 const closingRef = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
@@ -54,14 +55,14 @@ function summarizeChecks(runs) {
 
 export function createGitHub({ repo, token, fetchImpl = fetch }) {
   const base = `/repos/${repo.split("/").map(encodeURIComponent).join("/")}`;
-  async function request(path, { method = "GET", body } = {}) {
+  async function send(path, { method = "GET", body, accept } = {}) {
     const response = await fetchImpl(`${api}${path}`, {
       method,
       redirect: "error",
       signal: AbortSignal.timeout(20_000),
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
+        Accept: accept ?? "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "project-os-board",
         ...(body ? { "Content-Type": "application/json" } : {}),
@@ -77,7 +78,17 @@ export function createGitHub({ repo, token, fetchImpl = fetch }) {
       error.status = response.status;
       throw error;
     }
-    return response.status === 204 ? null : response.json();
+    return response;
+  }
+  async function request(path, options) {
+    const response = await send(path, options);
+    return !response || response.status === 204 ? null : response.json();
+  }
+  async function binary(path) {
+    const response = await send(path, {
+      accept: "application/vnd.github.raw",
+    });
+    return Buffer.from(await response.arrayBuffer());
   }
   async function pages(path, limit = 10) {
     const items = [];
@@ -91,8 +102,86 @@ export function createGitHub({ repo, token, fetchImpl = fetch }) {
     }
     return items;
   }
-  return { request, pages, base };
+  return { request, binary, pages, base };
 }
+
+// Images live on their own branch with no shared history, so they never reach
+// the default branch or a build.
+export const imageBranch = "board-images";
+export const maxImageBytes = 5 * 1024 * 1024;
+export const imageTypes = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+// The type comes from the bytes, never the file name, so a script cannot pass
+// as an image.
+export function imageExtension(bytes) {
+  const has = (text, at = 0) =>
+    bytes.subarray(at, at + text.length).equals(Buffer.from(text, "latin1"));
+  if (has("\x89PNG\r\n\x1a\n")) return "png";
+  if (has("\xff\xd8\xff")) return "jpg";
+  if (has("GIF87a") || has("GIF89a")) return "gif";
+  if (has("RIFF") && has("WEBP", 8)) return "webp";
+  return null;
+}
+
+async function createImageBranch(gh, path, content, message) {
+  const blob = await gh.request(`${gh.base}/git/blobs`, {
+    method: "POST",
+    body: { content, encoding: "base64" },
+  });
+  const tree = await gh.request(`${gh.base}/git/trees`, {
+    method: "POST",
+    body: {
+      tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
+    },
+  });
+  const commit = await gh.request(`${gh.base}/git/commits`, {
+    method: "POST",
+    body: { message, tree: tree.sha, parents: [] },
+  });
+  await gh.request(`${gh.base}/git/refs`, {
+    method: "POST",
+    body: { ref: `refs/heads/${imageBranch}`, sha: commit.sha },
+  });
+}
+
+// Stores an image and returns the Markdown that shows it on GitHub and the board.
+export async function uploadImage(gh, repo, bytes, name, now = new Date()) {
+  const month = now.toISOString().slice(0, 7);
+  const random = randomBytes(16).toString("hex");
+  const id = `${month}/${random}.${imageExtension(bytes)}`;
+  const path = `images/${id}`;
+  const content = bytes.toString("base64");
+  const message = `Board image ${id}`;
+  const branch = await gh
+    .request(`${gh.base}/git/ref/heads/${imageBranch}`)
+    .catch((error) => {
+      if (error.status === 404) return null;
+      throw error;
+    });
+  if (branch)
+    await gh.request(`${gh.base}/contents/${path}`, {
+      method: "PUT",
+      body: { message, content, branch: imageBranch },
+    });
+  else await createImageBranch(gh, path, content, message);
+  const alt =
+    String(name ?? "")
+      .replace(/[^\p{L}\p{N} ._-]/gu, "")
+      .trim()
+      .slice(0, 100) || "ảnh";
+  return {
+    id,
+    markdown: `![${alt}](https://github.com/${repo}/blob/${imageBranch}/${path}?raw=true)`,
+  };
+}
+
+export const loadImage = (gh, id) =>
+  gh.binary(`${gh.base}/contents/images/${id}?ref=${imageBranch}`);
 
 async function pullDetails(gh, pull) {
   const sha = pull.head?.sha;

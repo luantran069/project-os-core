@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   closedIssues,
   createGitHub,
+  imageExtension,
   planAction,
   stageOf,
 } from "../board/github.mjs";
@@ -269,6 +270,87 @@ test("a new idea becomes an issue with the idea label", () =>
       issue.labels.map((l) => l.name),
       [labels.idea],
     );
+  }));
+
+const pixel = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEBgIApD5fRAAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("image types come from the file's bytes", () => {
+  assert.equal(imageExtension(pixel), "png");
+  assert.equal(imageExtension(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), "jpg");
+  assert.equal(imageExtension(Buffer.from("GIF89a")), "gif");
+  assert.equal(imageExtension(Buffer.from("RIFF0000WEBPVP8 ")), "webp");
+  assert.equal(imageExtension(Buffer.from("<svg onload=alert(1)>")), null);
+  assert.equal(imageExtension(Buffer.alloc(0)), null);
+});
+
+test("an image goes to its own branch and comes back through the board", () =>
+  withBoard(async ({ call, fake }) => {
+    const data = pixel.toString("base64");
+    assert.equal((await call("/api/images", { body: { data } })).status, 401);
+    await call("/api/login", { body: { password } });
+    const first = await call("/api/images", {
+      body: { name: "lỗi [map](x).png", data },
+    });
+    assert.equal(first.status, 201);
+    assert.match(first.body.id, /^\d{4}-\d{2}\/[a-f0-9]{32}\.png$/);
+    assert.equal(
+      first.body.markdown,
+      `![lỗi mapx.png](https://github.com/example/demo-app/blob/board-images/images/${first.body.id}?raw=true)`,
+    );
+    assert.ok(fake.writes.some((w) => w.path === "/git/refs"));
+
+    const second = await call("/api/images", { body: { data } });
+    assert.equal(second.status, 201);
+    assert.notEqual(second.body.id, first.body.id);
+    assert.equal(fake.imageFiles.size, 2);
+    assert.equal(fake.writes.filter((w) => w.path === "/git/refs").length, 1);
+
+    const image = await call(`/api/images/${first.body.id}`, { raw: true });
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get("content-type"), "image/png");
+    assert.equal(image.headers.get("x-content-type-options"), "nosniff");
+    assert.match(image.headers.get("cache-control"), /^private/);
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()), pixel);
+  }));
+
+test("the board refuses other files and oversized images", () =>
+  withBoard(async ({ call, fake }) => {
+    await call("/api/login", { body: { password } });
+    const svg = Buffer.from("<svg onload=alert(1)>").toString("base64");
+    assert.equal(
+      (await call("/api/images", { body: { data: svg } })).status,
+      400,
+    );
+    assert.equal(
+      (await call("/api/images", { body: { data: "" } })).status,
+      400,
+    );
+    const large = Buffer.concat([pixel, Buffer.alloc(5 * 1024 * 1024)]);
+    assert.equal(
+      (await call("/api/images", { body: { data: large.toString("base64") } }))
+        .status,
+      413,
+    );
+    assert.equal(fake.imageFiles.size, 0);
+  }));
+
+test("only image ids can be read, and only after login", () =>
+  withBoard(async ({ call }) => {
+    const id = `2026-11/${"a".repeat(32)}.png`;
+    assert.equal((await call(`/api/images/${id}`, { raw: true })).status, 401);
+    await call("/api/login", { body: { password } });
+    for (const path of [
+      "/api/images/..%2F..%2Fproject.yaml",
+      "/api/images/2026-11/secret.yaml",
+      `/api/images/2026-11/${"a".repeat(32)}.svg`,
+    ])
+      assert.equal((await call(path, { raw: true })).status, 404);
+    const missing = await call(`/api/images/${id}`);
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(JSON.stringify(missing.body), /secret detail/);
   }));
 
 test("GitHub errors never pass the response body or token through", () =>
