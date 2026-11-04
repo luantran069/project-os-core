@@ -215,6 +215,44 @@
         flex-wrap: wrap;
         margin-top: 12px;
       }
+      .body img {
+        display: block;
+        max-width: 100%;
+        max-height: 50vh;
+        margin: 8px 0;
+        border-radius: 6px;
+      }
+      .attach {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .attach input {
+        display: none;
+      }
+      .attach label {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 10px;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .previews {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .previews img {
+        height: 72px;
+        max-width: 160px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+      }
       .error {
         color: var(--bad);
         min-height: 1.2em;
@@ -322,6 +360,122 @@
 
       const safeUrl = (url) =>
         typeof url === "string" && url.startsWith("https://") ? url : null;
+
+      const maxImageBytes = 5 * 1024 * 1024;
+      const boardImage =
+        /!\[([^\]]*)\]\(https:\/\/github\.com\/[^/\s)]+\/[^/\s)]+\/blob\/board-images\/images\/(\d{4}-\d{2}\/[a-f0-9]{32}\.(?:png|jpg|gif|webp))\?raw=true\)/g;
+
+      // Text with the board's own images shown in place. They load through the
+      // board, because the browser has no GitHub login for a private repository.
+      function withImages(text) {
+        const parts = [];
+        let last = 0;
+        for (const match of text.matchAll(boardImage)) {
+          parts.push(text.slice(last, match.index));
+          parts.push(
+            el("img", {
+              src: `/api/images/${match[2]}`,
+              alt: match[1],
+              loading: "lazy",
+            }),
+          );
+          last = match.index + match[0].length;
+        }
+        parts.push(text.slice(last));
+        return parts;
+      }
+
+      // Adds choosing, pasting and dropping images to a textarea. Each image is
+      // uploaded at once and its Markdown goes in at the cursor.
+      function imagePicker(textarea, error) {
+        const status = el(
+          "span",
+          {},
+          "Dán, kéo thả hoặc chọn ảnh, tối đa 5 MB",
+        );
+        const previews = el("div", { class: "previews" });
+        let pending = 0;
+        const insert = (markdown) => {
+          const start = textarea.selectionStart;
+          const before = textarea.value.slice(0, start);
+          const after = textarea.value.slice(textarea.selectionEnd);
+          const lead = before && !before.endsWith("\n") ? "\n" : "";
+          const inserted = `${lead}${markdown}\n`;
+          textarea.value = before + inserted + after;
+          textarea.selectionEnd = textarea.selectionStart =
+            before.length + inserted.length;
+        };
+        const read = (file) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(",")[1]);
+            reader.onerror = () => reject(new Error("Không đọc được ảnh"));
+            reader.readAsDataURL(file);
+          });
+        const upload = async (file) => {
+          if (file.size > maxImageBytes) {
+            error.textContent = `${file.name}: ảnh tối đa 5 MB`;
+            return;
+          }
+          pending += 1;
+          status.textContent = "Đang tải ảnh…";
+          try {
+            const image = await call("/api/images", {
+              name: file.name,
+              data: await read(file),
+            });
+            insert(image.markdown);
+            previews.append(
+              el("img", { src: `/api/images/${image.id}`, alt: file.name }),
+            );
+            error.textContent = "";
+          } catch (e) {
+            error.textContent = e.message;
+          }
+          pending -= 1;
+          if (!pending) status.textContent = "Đã thêm ảnh vào nội dung";
+        };
+        const images = (list) =>
+          [...list].filter((file) => file.type.startsWith("image/"));
+        const uploadAll = (list) => images(list).forEach(upload);
+        const input = el("input", {
+          type: "file",
+          accept: "image/png,image/jpeg,image/gif,image/webp",
+          multiple: "",
+          onchange: () => {
+            uploadAll(input.files);
+            input.value = "";
+          },
+        });
+        textarea.addEventListener("paste", (event) => {
+          const pasted = images(event.clipboardData?.files ?? []);
+          if (!pasted.length) return;
+          event.preventDefault();
+          pasted.forEach(upload);
+        });
+        textarea.addEventListener("dragover", (event) =>
+          event.preventDefault(),
+        );
+        textarea.addEventListener("drop", (event) => {
+          if (!images(event.dataTransfer?.files ?? []).length) return;
+          event.preventDefault();
+          uploadAll(event.dataTransfer.files);
+        });
+        return {
+          busy: () => pending > 0,
+          node: el(
+            "div",
+            {},
+            el(
+              "div",
+              { class: "attach" },
+              el("label", {}, "Thêm ảnh", input),
+              status,
+            ),
+            previews,
+          ),
+        };
+      }
       const when = (iso) =>
         iso
           ? new Date(iso).toLocaleString("vi-VN", {
@@ -457,9 +611,14 @@
           rows: "3",
           placeholder: "Ghi chú cho agent (bắt buộc khi Sửa lại)",
         });
+        const notePicker = imagePicker(note, error);
         const workpad = el("div", { class: "body" }, "Đang tải bình luận…");
         const pull = feature.pull;
         const act = async (action, label, button) => {
+          if (notePicker.busy()) {
+            error.textContent = "Đợi ảnh tải xong";
+            return;
+          }
           if (
             action === "approve" &&
             feature.stage === "review" &&
@@ -549,11 +708,12 @@
                 )
               : null,
             el("h4", {}, "Mô tả và kế hoạch"),
-            el("div", { class: "body" }, feature.body || "(trống)"),
+            el("div", { class: "body" }, withImages(feature.body || "(trống)")),
             el("h4", {}, "Agent Workpad"),
             workpad,
             actionButtons.length ? el("h4", {}, "Quyết định") : null,
             actionButtons.length ? note : null,
+            actionButtons.length ? notePicker.node : null,
             el(
               "div",
               { class: "actions" },
@@ -569,7 +729,9 @@
         call(`/api/features/${feature.number}/comments`)
           .then((comments) => {
             const pad = comments.filter((c) => c.workpad).pop();
-            workpad.textContent = pad ? pad.body : "(agent chưa ghi workpad)";
+            workpad.replaceChildren(
+              ...withImages(pad ? pad.body : "(agent chưa ghi workpad)"),
+            );
           })
           .catch((e) => (workpad.textContent = e.message));
       }
@@ -585,8 +747,13 @@
           placeholder: "Mô tả ngắn: vấn đề, ai dùng, kết quả mong muốn",
         });
         const error = el("div", { class: "error" });
+        const picker = imagePicker(body, error);
         const save = el("button", { class: "primary" }, "Tạo");
         save.addEventListener("click", async () => {
+          if (picker.busy()) {
+            error.textContent = "Đợi ảnh tải xong";
+            return;
+          }
           save.disabled = true;
           try {
             await call("/api/features", {
@@ -608,6 +775,7 @@
             title,
             el("p"),
             body,
+            picker.node,
             el(
               "div",
               { class: "actions" },
