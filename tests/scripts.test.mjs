@@ -199,7 +199,14 @@ test("a core checked out with CRLF pins the same hashes and writes LF files", as
   const copy = await mkdtemp(join(tmpdir(), "project-os-core-"));
   const link = join(copy, "node_modules");
   try {
-    for (const path of ["VERSION", "scripts", "symphony", "board", "template"])
+    for (const path of [
+      "VERSION",
+      "scripts",
+      "symphony",
+      "board",
+      "orchestrator",
+      "template",
+    ])
       await cp(join(coreRoot, path), join(copy, path), { recursive: true });
     await toCrlf(copy);
     await symlink(join(coreRoot, "node_modules"), link, "junction");

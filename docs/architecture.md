@@ -32,6 +32,12 @@ keeps Symphony as its orchestrator. The tracker and runtime are declared in
 project's own repository (Symphony v0.0.3 ships a GitHub reader); Jira is still
 supported for projects that have not moved. Gates and labels are unchanged.
 
+Since core 0.6.0 a project may set `runtime.orchestrator: claude` instead. The
+[Claude orchestrator](orchestrator.md) keeps the same state machine and labels but
+gives each feature one resumable Claude session that the owner can talk to from the
+board, on the owner's Mac or on Dokploy. See
+[ADR-0001](decisions/ADR-0001-claude-session-orchestrator.md).
+
 ## Agents
 
 Each agent has one job, one output and a list of things it must not do. See

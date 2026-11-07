@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 (2026-11-07)
+
+- A Claude orchestrator: one resumable Claude session per feature, linked to the board.
+  Set `runtime.orchestrator: claude` and `runtime.host: mac` or `dokploy`; see
+  `docs/orchestrator.md` and ADR-0001 in `docs/decisions/`. Symphony stays the default.
+- The board gets a chat panel on every card when `AGENT_TOKEN` is set: the owner talks
+  to the feature's session at any stage, answers the agent's questions, allows or denies
+  held commands, and can take the session over in a terminal with `claude --resume`.
+- The orchestrator only calls out to the board, so a Mac needs no open port.
+- `sync-project` copies `orchestrator/` into `.project-os/orchestrator/`.
+  `check-project` checks vendored files and `runtime.host` for Claude projects too.
+- Redeploy the board after syncing. Without `AGENT_TOKEN` it behaves as before.
+
 ## 0.5.0 (2026-11-04)
 
 - The board shows an agent's conversation. A runner saves the session on a

@@ -67,6 +67,17 @@ A session holds whatever the agent read and printed, and the branch keeps it unt
 someone deletes it. Anyone who can read the repository can read it, so remove tokens
 before saving and do not do this in a public repository.
 
+## Chat with the feature's Claude session
+
+With `AGENT_TOKEN` set (at least 32 characters, the same value as the
+[Claude orchestrator](orchestrator.md)'s), every card has a "Phiên Claude" panel. It
+shows the session live, takes the owner's messages, shows the agent's questions and the
+commands waiting for approval, and gives the command to continue the session in a
+terminal. Cards show the session's status. The orchestrator reaches the board on
+`/api/agent/inbox` and `/api/agent/events` with that token as a bearer token; the owner's
+cookie never works there and the token never works on the owner's routes. Without
+`AGENT_TOKEN` those routes return 404 and the board works as before.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues
