@@ -125,9 +125,18 @@ export async function checkProject(directory) {
   if (!manifest?.labels?.ready)
     errors.push("project.yaml labels.ready is missing");
 
-  if (manifest?.runtime?.orchestrator === "symphony") {
+  const orchestrator = manifest?.runtime?.orchestrator;
+  if (orchestrator === "symphony" || orchestrator === "claude")
     if (semver.test(version))
       await checkVendored(root, version, current, errors, warnings);
+  if (orchestrator === "claude") {
+    const host = manifest.runtime.host ?? "mac";
+    if (!["mac", "dokploy"].includes(host))
+      errors.push("project.yaml runtime.host must be mac or dokploy");
+    if (manifest?.tracker?.kind !== "github")
+      errors.push("The Claude orchestrator needs tracker.kind: github");
+  }
+  if (orchestrator === "symphony") {
     try {
       await checkWorkflow(false, root);
     } catch (error) {

@@ -253,6 +253,53 @@
         border-radius: 6px;
         border: 1px solid var(--line);
       }
+      .chat {
+        display: grid;
+        gap: 8px;
+      }
+      .chat-log {
+        display: grid;
+        gap: 6px;
+        max-height: 45vh;
+        overflow-y: auto;
+        padding: 2px;
+      }
+      .chat-log > * {
+        min-width: 0;
+      }
+      .chat-log .message .text {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .request {
+        border: 1px solid var(--warn, #c08a00);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 6px;
+      }
+      .request button[aria-pressed="true"] {
+        border-color: var(--accent, currentColor);
+        outline: 2px solid var(--accent, currentColor);
+      }
+      .request pre,
+      .resume code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0;
+        font-size: 13px;
+      }
+      .resume {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .chip.agent-waiting-owner,
+      .chip.agent-request {
+        background: var(--warn, #c08a00);
+        color: #fff;
+      }
       .session {
         display: grid;
         gap: 8px;
@@ -557,6 +604,7 @@
             feature.priority
               ? el("span", { class: "chip" }, feature.priority.toUpperCase())
               : null,
+            agentChip(feature),
             pull
               ? el(
                   "span",
@@ -657,6 +705,338 @@
         done: [],
       };
 
+      const agentStatus = {
+        new: "Chưa có phiên",
+        running: "Claude đang làm",
+        idle: "Claude rảnh",
+        "waiting-owner": "Claude chờ bạn",
+        "taken-over": "Bạn đang tiếp quản",
+        failed: "Lượt cuối bị lỗi",
+      };
+
+      function agentChip(feature) {
+        const info = state.data.agent?.features?.[feature.number];
+        if (!info) return null;
+        if (info.requests)
+          return el(
+            "span",
+            { class: "chip agent-request" },
+            "Claude cần bạn duyệt",
+          );
+        return el(
+          "span",
+          { class: `chip agent-${info.status}` },
+          agentStatus[info.status] ?? info.status,
+        );
+      }
+
+      const quote = (path) => `'${String(path).replaceAll("'", "'\\''")}'`;
+      const resumeCommand = (s) =>
+        s.host === "dokploy"
+          ? `docker exec -it <container> sh -lc "cd ${quote(s.workspace)} && claude --resume ${s.sessionId}"`
+          : `cd ${quote(s.workspace)} && claude --resume ${s.sessionId}`;
+
+      // The feature's Claude session: live log, owner's questions and approvals,
+      // a message box, and the command to continue it in a terminal.
+      function chatPanel(feature) {
+        const number = feature.number;
+        const path = `/api/features/${number}/chat`;
+        let after = 0;
+        let timer = null;
+        let latest = null;
+        let shownRequests = "";
+        const answered = new Set();
+        const log = el("div", { class: "chat-log", "aria-live": "polite" });
+        const head = el("p", { class: "meta" });
+        const resume = el("div", { class: "resume" });
+        const requests = el("div", { class: "chat" });
+        const error = el("div", { class: "error" });
+        const input = el("textarea", {
+          rows: "3",
+          placeholder: "Nhắn cho Claude về feature này (Ctrl+Enter để gửi)",
+        });
+        const sendButton = el("button", { class: "primary" }, "Gửi");
+        const takeButton = el("button", {}, "Tiếp quản trong terminal");
+
+        const post = async (suffix, body) => {
+          error.textContent = "";
+          try {
+            await call(`${path}${suffix}`, body);
+            refresh();
+          } catch (e) {
+            error.textContent = e.message;
+          }
+        };
+        const send = async () => {
+          const text = input.value.trim();
+          if (!text) return;
+          sendButton.disabled = true;
+          await post("", { text });
+          input.value = "";
+          sendButton.disabled = false;
+        };
+        sendButton.addEventListener("click", send);
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
+        });
+        takeButton.addEventListener("click", () => {
+          if (latest?.status === "taken-over") return post("/release", {});
+          if (
+            confirm(
+              "Dừng lượt đang chạy và để bạn tự tiếp tục phiên này trong terminal?",
+            )
+          )
+            post("/takeover", {});
+        });
+
+        function entry(event) {
+          if (event.kind === "owner")
+            return el(
+              "div",
+              { class: "message user" },
+              el("div", { class: "meta" }, `Bạn · ${when(event.at)}`),
+              el("div", { class: "text" }, event.text),
+            );
+          if (event.kind === "assistant")
+            return el(
+              "div",
+              { class: "message" },
+              el("div", { class: "meta" }, `Claude · ${when(event.at)}`),
+              el("div", { class: "text" }, event.text),
+            );
+          if (event.kind === "tool")
+            return el(
+              "div",
+              { class: "step" },
+              `${event.name} · ${event.summary}`,
+            );
+          if (event.kind === "request")
+            return el(
+              "div",
+              { class: "step" },
+              event.requestKind === "question"
+                ? "Claude hỏi bạn"
+                : `Xin duyệt: ${event.reason}`,
+            );
+          if (event.kind === "request-closed")
+            return el(
+              "div",
+              { class: "step" },
+              `Đã xử lý yêu cầu (${event.outcome})`,
+            );
+          if (event.kind === "result")
+            return el(
+              "div",
+              { class: `step${event.ok ? "" : " failed"}` },
+              `${event.ok ? "Xong lượt" : "Lượt lỗi"} · $${event.costUsd.toFixed(2)}`,
+            );
+          if (event.kind === "error")
+            return el("div", { class: "step failed" }, event.text);
+          if (event.kind === "status")
+            return el(
+              "div",
+              { class: "step" },
+              agentStatus[event.status] ?? event.status,
+            );
+          return null;
+        }
+
+        function requestCard(request) {
+          const note = el("textarea", {
+            rows: "2",
+            placeholder: "Ghi chú (tuỳ chọn)",
+          });
+          const done = (body) => {
+            answered.add(request.id);
+            shownRequests = "";
+            post("/answer", { id: request.id, ...body, note: note.value });
+          };
+          if (request.kind === "approval")
+            return el(
+              "div",
+              { class: "request" },
+              el("strong", {}, `Claude xin duyệt: ${request.reason}`),
+              el("pre", {}, request.summary),
+              note,
+              el(
+                "div",
+                { class: "actions" },
+                el(
+                  "button",
+                  { class: "primary", onclick: () => done({ allow: true }) },
+                  "Cho phép",
+                ),
+                el(
+                  "button",
+                  { class: "danger", onclick: () => done({ allow: false }) },
+                  "Từ chối",
+                ),
+              ),
+            );
+          const picks = (request.questions ?? []).map((q) => {
+            const free = el("input", { placeholder: "Hoặc tự trả lời" });
+            const chosen = new Set();
+            const options = q.options.map((o) => {
+              const button = el("button", { title: o.description }, o.label);
+              button.addEventListener("click", () => {
+                if (!q.multiSelect) chosen.clear();
+                chosen.has(o.label)
+                  ? chosen.delete(o.label)
+                  : chosen.add(o.label);
+                for (const b of options)
+                  b.setAttribute(
+                    "aria-pressed",
+                    String(chosen.has(b.textContent)),
+                  );
+              });
+              return button;
+            });
+            return {
+              q,
+              value: () => free.value.trim() || [...chosen].join(", "),
+              node: el(
+                "div",
+                {},
+                el("p", {}, q.question),
+                el("div", { class: "actions" }, options),
+                free,
+              ),
+            };
+          });
+          return el(
+            "div",
+            { class: "request" },
+            el("strong", {}, "Claude hỏi bạn"),
+            picks.map((p) => p.node),
+            note,
+            el(
+              "div",
+              { class: "actions" },
+              el(
+                "button",
+                {
+                  class: "primary",
+                  onclick: () =>
+                    done({
+                      allow: true,
+                      answers: Object.fromEntries(
+                        picks.map((p) => [p.q.question, p.value()]),
+                      ),
+                    }),
+                },
+                "Trả lời",
+              ),
+              el("button", { onclick: () => done({ allow: false }) }, "Bỏ qua"),
+            ),
+          );
+        }
+
+        function show(view) {
+          latest = view.state;
+          const s = view.state;
+          head.replaceChildren(
+            ...[
+              el(
+                "span",
+                { class: "chip" },
+                view.online
+                  ? "Orchestrator đang chạy"
+                  : "Orchestrator mất kết nối",
+              ),
+              s
+                ? el(
+                    "span",
+                    { class: `chip agent-${s.status}` },
+                    agentStatus[s.status] ?? s.status,
+                  )
+                : el("span", {}, "Chưa có phiên Claude"),
+              s?.queued ? el("span", {}, `${s.queued} tin chờ`) : null,
+              s
+                ? el("span", {}, `${s.turns} lượt · $${s.costUsd.toFixed(2)}`)
+                : null,
+              s
+                ? el("span", {}, s.host === "dokploy" ? "Dokploy" : "Mac")
+                : null,
+            ].filter(Boolean),
+          );
+          takeButton.textContent =
+            s?.status === "taken-over"
+              ? "Trả lại cho orchestrator"
+              : "Tiếp quản trong terminal";
+          takeButton.disabled = !s?.sessionId;
+          resume.replaceChildren(
+            ...(s?.sessionId && s.workspace
+              ? [
+                  el("code", {}, resumeCommand(s)),
+                  el(
+                    "button",
+                    {
+                      onclick: () =>
+                        navigator.clipboard?.writeText(resumeCommand(s)),
+                    },
+                    "Chép lệnh",
+                  ),
+                ]
+              : []),
+          );
+          // Redraw only when the open requests change, so a half-written
+          // answer survives the next refresh.
+          const open = (s?.requests ?? []).filter((r) => !answered.has(r.id));
+          const key = JSON.stringify([
+            open.map((r) => r.id),
+            s?.status === "waiting-owner" ? s.question : null,
+          ]);
+          if (key !== shownRequests) {
+            shownRequests = key;
+            requests.replaceChildren(
+              ...[
+                ...open.map(requestCard),
+                s?.status === "waiting-owner" && s.question
+                  ? el(
+                      "div",
+                      { class: "request" },
+                      el("strong", {}, "Claude đang chờ bạn trả lời"),
+                      el("pre", {}, s.question),
+                    )
+                  : null,
+              ].filter(Boolean),
+            );
+          }
+          const stick =
+            log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+          for (const event of view.events) {
+            const node = entry(event);
+            if (node) log.append(node);
+          }
+          if (view.events.length) after = view.events.at(-1).seq;
+          if (stick) log.scrollTop = log.scrollHeight;
+        }
+
+        async function refresh() {
+          clearTimeout(timer);
+          try {
+            show(await call(`${path}?after=${after}`));
+          } catch (e) {
+            error.textContent = e.message;
+          }
+          if (node.isConnected) timer = setTimeout(refresh, 2000);
+        }
+
+        const node = el(
+          "div",
+          { class: "chat" },
+          el("h4", {}, "Phiên Claude"),
+          head,
+          log,
+          requests,
+          input,
+          el("div", { class: "actions" }, sendButton, takeButton),
+          resume,
+          error,
+        );
+        return { node, start: refresh, stop: () => clearTimeout(timer) };
+      }
+
       function openFeature(feature, column) {
         const dialog = el("dialog");
         const error = el("div", { class: "error" });
@@ -667,6 +1047,7 @@
         const notePicker = imagePicker(note, error);
         const workpad = el("div", { class: "body" }, "Đang tải bình luận…");
         const sessions = el("p", { class: "meta" });
+        const chat = state.data.agent ? chatPanel(feature) : null;
         const pull = feature.pull;
         const act = async (action, label, button) => {
           if (notePicker.busy()) {
@@ -766,6 +1147,7 @@
             el("h4", {}, "Agent Workpad"),
             workpad,
             sessions,
+            chat?.node,
             actionButtons.length ? el("h4", {}, "Quyết định") : null,
             actionButtons.length ? note : null,
             actionButtons.length ? notePicker.node : null,
@@ -778,9 +1160,13 @@
             error,
           ),
         );
-        dialog.addEventListener("close", () => dialog.remove());
+        dialog.addEventListener("close", () => {
+          chat?.stop();
+          dialog.remove();
+        });
         document.body.append(dialog);
         dialog.showModal();
+        chat?.start();
         call(`/api/features/${feature.number}/comments`)
           .then((comments) => {
             const pad = comments.filter((c) => c.workpad).pop();

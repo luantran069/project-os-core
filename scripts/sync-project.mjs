@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const coreRoot = fileURLToPath(new URL("../", import.meta.url));
 // Core modules a project receives a copy of, under .project-os/<module>/.
-export const modules = ["symphony", "board"];
+export const modules = ["symphony", "board", "orchestrator"];
 export const vendorPath = ".project-os";
 export const manifestPath = ".project-os/core.json";
 
@@ -43,7 +43,8 @@ const readme = (version) => `# Project OS files
 
 Copied from [project-os-core](https://github.com/luantran069/project-os-core)
 ${version} by \`scripts/sync-project.mjs\`: \`symphony/\` runs the agents,
-\`board/\` is the owner's feature board. Do not edit these files here: change
+\`board/\` is the owner's feature board,
+\`orchestrator/\` runs one Claude session per feature (runtime.orchestrator: claude). Do not edit these files here: change
 them in the core, release a new core version, then sync this project again.
 \`check-project\` fails when a file differs from \`core.json\`.
 `;
@@ -66,7 +67,7 @@ async function pinLineEndings(root) {
   await writeFile(file, `${text}${separator}${eolRule}${eol}`);
 }
 
-// Copies the core's modules (Symphony and the board) into a project and pins project.yaml to
+// Copies the core's modules (Symphony, the board and the orchestrator) into a project and pins project.yaml to
 // this core version. Re-running it on the same version changes nothing.
 export async function syncProject(target) {
   const root = resolve(target);
@@ -116,6 +117,13 @@ export async function syncProject(target) {
     if (!deps.yaml)
       warnings.push(
         'package.json needs the "yaml" package for the Symphony scripts',
+      );
+    if (
+      /^\s*orchestrator:\s*claude\b/m.test(manifest) &&
+      !deps["@anthropic-ai/claude-agent-sdk"]
+    )
+      warnings.push(
+        'package.json needs "@anthropic-ai/claude-agent-sdk" for the Claude orchestrator',
       );
   } catch (error) {
     if (error.code !== "ENOENT") throw error;

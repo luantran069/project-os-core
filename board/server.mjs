@@ -16,6 +16,7 @@ import {
   maxImageBytes,
   uploadImage,
 } from "./github.mjs";
+import { createRelay } from "./relay.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
 const cookieName = "board_session";
@@ -89,8 +90,11 @@ export function createBoard({
   github,
   secure = true,
   now = Date.now,
+  agentToken = "",
 }) {
   let cache = null;
+  // Set when the board is linked to a Claude orchestrator (AGENT_TOKEN).
+  const relay = agentToken ? createRelay({ now }) : null;
   const failures = { count: 0, until: 0 };
   const send = (response, status, body, headers = {}) => {
     const json = typeof body !== "string";
@@ -114,6 +118,31 @@ export function createBoard({
       if (route === "GET /healthz") return send(response, 200, { ok: true });
       if (route === "GET /")
         return send(response, 200, await readFile(page, "utf8"));
+      // The orchestrator's link: a bearer token, never the owner's cookie.
+      if (url.pathname.startsWith("/api/agent/")) {
+        if (!relay) return send(response, 404, { error: "Không có" });
+        if (!same(request.headers.authorization ?? "", `Bearer ${agentToken}`))
+          return send(response, 401, { error: "Cần token" });
+        if (route === "GET /api/agent/inbox") {
+          const wait =
+            Math.min(
+              Math.max(Number(url.searchParams.get("wait")) || 0, 0),
+              25,
+            ) * 1000;
+          const closed = new Promise((resolve) =>
+            response.on("close", resolve),
+          );
+          const commands = await relay.take(wait, closed);
+          // The orchestrator hung up while waiting: keep its commands.
+          if (response.destroyed) return relay.restore(commands);
+          return send(response, 200, { commands });
+        }
+        if (route === "POST /api/agent/events") {
+          relay.receive(await readJson(request, 2 * 1024 * 1024));
+          return send(response, 200, { ok: true });
+        }
+        return send(response, 404, { error: "Không có" });
+      }
       if (route === "POST /api/login") {
         if (now() < failures.until)
           return send(response, 429, { error: "Thử lại sau ít phút" });
@@ -176,6 +205,9 @@ export function createBoard({
           repo,
           loadedAt: new Date(cache.at).toISOString(),
           ...cache.data,
+          agent: relay
+            ? { online: relay.online(), features: relay.summary() }
+            : null,
         });
       }
       if (route === "POST /api/images") {
@@ -223,6 +255,49 @@ export function createBoard({
           run: session[1],
           entries,
         });
+      }
+      const chat = url.pathname.match(
+        /^\/api\/features\/(\d+)\/chat(?:\/(answer|takeover|release))?$/,
+      );
+      if (chat) {
+        if (!relay)
+          return send(response, 404, { error: "Board chưa nối orchestrator" });
+        const issue = Number(chat[1]);
+        if (request.method === "GET" && !chat[2])
+          return send(
+            response,
+            200,
+            relay.view(issue, Number(url.searchParams.get("after")) || 0),
+          );
+        if (request.method !== "POST")
+          return send(response, 404, { error: "Không có" });
+        const body = await readJson(request);
+        if (!chat[2]) {
+          const text = String(body.text ?? "").trim();
+          if (!text || text.length > 20_000)
+            return send(response, 400, {
+              error: "Cần nội dung tin nhắn (tối đa 20.000 ký tự)",
+            });
+          relay.push({ type: "message", issue, text });
+        } else if (chat[2] === "answer") {
+          const answers = Object.fromEntries(
+            Object.entries(body.answers ?? {})
+              .slice(0, 4)
+              .map(([q, a]) => [
+                String(q).slice(0, 1000),
+                String(a).slice(0, 5000),
+              ]),
+          );
+          relay.push({
+            type: "answer",
+            issue,
+            id: String(body.id ?? "").slice(0, 64),
+            allow: body.allow !== false,
+            answers,
+            note: String(body.note ?? "").slice(0, 5000),
+          });
+        } else relay.push({ type: chat[2], issue });
+        return send(response, 202, { ok: true, online: relay.online() });
       }
       const comments = url.pathname.match(/^\/api\/features\/(\d+)\/comments$/);
       if (request.method === "GET" && comments)
@@ -280,6 +355,9 @@ export async function main(env = process.env) {
   if (password.length < 12)
     throw new Error("Set BOARD_PASSWORD (at least 12 characters)");
   if (!env.GITHUB_TOKEN?.trim()) throw new Error("Set GITHUB_TOKEN");
+  const agentToken = env.AGENT_TOKEN ?? "";
+  if (agentToken && agentToken.length < 32)
+    throw new Error("AGENT_TOKEN must be at least 32 characters");
   const repo = manifest.tracker.repo;
   const handle = createBoard({
     project: manifest.project.name,
@@ -289,6 +367,7 @@ export async function main(env = process.env) {
     secret: env.BOARD_SESSION_SECRET || randomBytes(32),
     secure: env.BOARD_INSECURE_COOKIE !== "1",
     github: createGitHub({ repo, token: env.GITHUB_TOKEN.trim() }),
+    agentToken,
   });
   const port = Number(env.PORT ?? 8080);
   createServer(handle).listen(port, env.HOST ?? "0.0.0.0", () =>
