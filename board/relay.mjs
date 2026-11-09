@@ -1,6 +1,8 @@
-// The board's side of the link to the Claude orchestrator. The orchestrator
-// long-polls the inbox for the owner's commands and posts events back; the
-// browser reads each feature's events and latest state from here.
+// The board's side of the link to the Claude orchestrators. Each orchestrator
+// (agent) long-polls its own inbox for the owner's commands and posts events
+// back; the browser reads each feature's events and latest state from here.
+// The agent's name comes from the token it called with, never from what it
+// posts. "" is the unnamed agent of a board with a single AGENT_TOKEN.
 //
 // Everything is in memory. A board restart drops unsent commands and the live
 // buffer; the Claude session and its transcript live with the orchestrator.
@@ -13,8 +15,13 @@ const statuses = new Set([
   "idle",
   "waiting-owner",
   "taken-over",
+  "reassigned",
   "failed",
 ]);
+
+// Agent names: lowercase letters, digits and dashes, used in `agent:<name>`.
+export const agentName = /^[a-z0-9][a-z0-9-]{0,30}$/;
+export const agentLabelPrefix = "agent:";
 
 const text = (value, limit) => String(value ?? "").slice(0, limit);
 
@@ -86,11 +93,12 @@ const cleanQuestions = (questions) =>
       }))
     : null;
 
-function cleanState(state) {
+function cleanState(state, agent) {
   const issue = Number(state?.issue);
   if (!Number.isInteger(issue) || issue <= 0) return null;
   return {
     issue,
+    agent,
     host: state.host === "dokploy" ? "dokploy" : "mac",
     status: statuses.has(state.status) ? state.status : "new",
     sessionId: /^[0-9a-f-]{36}$/i.test(state.sessionId ?? "")
@@ -120,12 +128,20 @@ function cleanState(state) {
 }
 
 export function createRelay({ now = Date.now } = {}) {
-  const inbox = [];
-  const waiters = new Set();
+  const inboxes = new Map(); // agent -> commands
+  const waiters = new Map(); // agent -> Set of wake functions
+  const lastSeen = new Map(); // agent -> time of its last call
   const features = new Map();
   let seq = 0;
-  let lastSeen = 0;
 
+  const inbox = (agent) => {
+    if (!inboxes.has(agent)) inboxes.set(agent, []);
+    return inboxes.get(agent);
+  };
+  const wakers = (agent) => {
+    if (!waiters.has(agent)) waiters.set(agent, new Set());
+    return waiters.get(agent);
+  };
   const feature = (issue) => {
     if (!features.has(issue)) features.set(issue, { events: [], state: null });
     return features.get(issue);
@@ -139,56 +155,72 @@ export function createRelay({ now = Date.now } = {}) {
     if (events.length > maxEvents) events.splice(0, events.length - maxEvents);
   }
 
-  // A command from the owner. Owner messages also go into the feature's log.
-  function push(command) {
+  // A command from the owner for one agent. Owner messages also go into the
+  // feature's log.
+  function push(agent, command) {
     if (command.type === "message")
       record(command.issue, {
         kind: "owner",
         text: command.text,
         at: new Date(now()).toISOString(),
       });
-    inbox.push(command);
-    for (const wake of waiters) wake();
+    inbox(agent).push(command);
+    for (const wake of wakers(agent)) wake();
   }
 
-  // The orchestrator's long poll: returns queued commands, or waits for one.
-  function take(waitMs, closed) {
-    lastSeen = now();
-    if (inbox.length || waitMs <= 0) return Promise.resolve(inbox.splice(0));
+  // An agent's long poll: returns its queued commands, or waits for one.
+  function take(agent, waitMs, closed) {
+    lastSeen.set(agent, now());
+    const queue = inbox(agent);
+    if (queue.length || waitMs <= 0) return Promise.resolve(queue.splice(0));
     return new Promise((resolve) => {
       let finished = false;
       const done = () => {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
-        waiters.delete(done);
-        lastSeen = now();
-        resolve(inbox.splice(0));
+        wakers(agent).delete(done);
+        lastSeen.set(agent, now());
+        resolve(queue.splice(0));
       };
       const timer = setTimeout(done, waitMs);
-      waiters.add(done);
+      wakers(agent).add(done);
       closed?.then(done);
     });
   }
 
-  function receive({ events = [], states = [] } = {}) {
-    lastSeen = now();
+  function receive(agent, { events = [], states = [] } = {}) {
+    lastSeen.set(agent, now());
     for (const event of Array.isArray(events) ? events.slice(0, 200) : []) {
       const issue = Number(event?.issue);
       if (Number.isInteger(issue) && issue > 0) record(issue, event);
     }
     for (const raw of Array.isArray(states) ? states.slice(0, 200) : []) {
-      const state = cleanState(raw);
-      if (state) feature(state.issue).state = state;
+      const state = cleanState(raw, agent);
+      if (!state) continue;
+      const entry = feature(state.issue);
+      // An agent that lost the feature does not hide the new agent's state.
+      if (
+        state.status === "reassigned" &&
+        entry.state &&
+        entry.state.agent !== agent
+      )
+        continue;
+      entry.state = state;
     }
   }
 
-  const online = () => now() - lastSeen < onlineMs;
+  // One agent, or any agent when none is named.
+  const online = (agent) =>
+    agent === undefined
+      ? [...lastSeen.values()].some((at) => now() - at < onlineMs)
+      : now() - (lastSeen.get(agent) ?? 0) < onlineMs;
 
-  function view(issue, after = 0) {
+  // `agent` is the one the feature is assigned to, for its online status.
+  function view(issue, after = 0, agent) {
     const entry = features.get(issue);
     return {
-      online: online(),
+      online: online(agent ?? entry?.state?.agent),
       state: entry?.state ?? null,
       events: (entry?.events ?? []).filter((event) => event.seq > after),
       cursor: seq,
@@ -202,14 +234,18 @@ export function createRelay({ now = Date.now } = {}) {
         .filter(([, entry]) => entry.state)
         .map(([issue, entry]) => [
           issue,
-          { status: entry.state.status, requests: entry.state.requests.length },
+          {
+            status: entry.state.status,
+            requests: entry.state.requests.length,
+            agent: entry.state.agent,
+          },
         ]),
     );
   }
 
   // Commands taken by a poll whose connection closed go back to the front.
-  const restore = (commands) => {
-    inbox.unshift(...commands);
+  const restore = (agent, commands) => {
+    inbox(agent).unshift(...commands);
   };
 
   return { push, take, restore, receive, view, summary, online };

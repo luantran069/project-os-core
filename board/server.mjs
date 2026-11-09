@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { readProject } from "../symphony/project.mjs";
 import {
   applyAction,
+  assignAgent,
+  assignedAgent,
   createGitHub,
   createIdea,
   imageExtension,
@@ -16,7 +18,7 @@ import {
   maxImageBytes,
   uploadImage,
 } from "./github.mjs";
-import { createRelay } from "./relay.mjs";
+import { agentName, createRelay } from "./relay.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
 const cookieName = "board_session";
@@ -91,10 +93,36 @@ export function createBoard({
   secure = true,
   now = Date.now,
   agentToken = "",
+  agentTokens = {},
 }) {
   let cache = null;
-  // Set when the board is linked to a Claude orchestrator (AGENT_TOKEN).
-  const relay = agentToken ? createRelay({ now }) : null;
+  // Agent name -> token. "" is the unnamed agent of a single AGENT_TOKEN,
+  // which takes every feature that has no `agent:` label.
+  const tokens = { ...agentTokens, ...(agentToken ? { "": agentToken } : {}) };
+  const named = Object.keys(tokens).filter(Boolean).sort();
+  // Set when the board is linked to at least one Claude orchestrator.
+  const relay = Object.keys(tokens).length ? createRelay({ now }) : null;
+  const caller = (header = "") => {
+    let found = null;
+    for (const [name, token] of Object.entries(tokens))
+      if (same(header, `Bearer ${token}`)) found = name;
+    return found;
+  };
+  // The agent that should receive commands for a feature.
+  async function agentFor(number) {
+    const issue = await github.request(`${github.base}/issues/${number}`);
+    const assigned = assignedAgent(issue);
+    if (assigned && assigned in tokens) return assigned;
+    if (assigned)
+      throw Object.assign(
+        new Error(`Agent "${assigned}" chưa được khai báo trên board`),
+        { status: 409 },
+      );
+    if ("" in tokens) return "";
+    throw Object.assign(new Error("Feature này chưa được giao cho agent nào"), {
+      status: 409,
+    });
+  }
   const failures = { count: 0, until: 0 };
   const send = (response, status, body, headers = {}) => {
     const json = typeof body !== "string";
@@ -121,8 +149,8 @@ export function createBoard({
       // The orchestrator's link: a bearer token, never the owner's cookie.
       if (url.pathname.startsWith("/api/agent/")) {
         if (!relay) return send(response, 404, { error: "Không có" });
-        if (!same(request.headers.authorization ?? "", `Bearer ${agentToken}`))
-          return send(response, 401, { error: "Cần token" });
+        const agent = caller(request.headers.authorization);
+        if (agent === null) return send(response, 401, { error: "Cần token" });
         if (route === "GET /api/agent/inbox") {
           const wait =
             Math.min(
@@ -132,13 +160,14 @@ export function createBoard({
           const closed = new Promise((resolve) =>
             response.on("close", resolve),
           );
-          const commands = await relay.take(wait, closed);
+          const commands = await relay.take(agent, wait, closed);
           // The orchestrator hung up while waiting: keep its commands.
-          if (response.destroyed) return relay.restore(commands);
-          return send(response, 200, { commands });
+          if (response.destroyed) return relay.restore(agent, commands);
+          // The name lets an orchestrator check it uses its own token.
+          return send(response, 200, { agent, commands });
         }
         if (route === "POST /api/agent/events") {
-          relay.receive(await readJson(request, 2 * 1024 * 1024));
+          relay.receive(agent, await readJson(request, 2 * 1024 * 1024));
           return send(response, 200, { ok: true });
         }
         return send(response, 404, { error: "Không có" });
@@ -206,7 +235,15 @@ export function createBoard({
           loadedAt: new Date(cache.at).toISOString(),
           ...cache.data,
           agent: relay
-            ? { online: relay.online(), features: relay.summary() }
+            ? {
+                online: relay.online(),
+                agents: named.map((name) => ({
+                  name,
+                  online: relay.online(name),
+                })),
+                unnamed: "" in tokens,
+                features: relay.summary(),
+              }
             : null,
         });
       }
@@ -272,13 +309,14 @@ export function createBoard({
         if (request.method !== "POST")
           return send(response, 404, { error: "Không có" });
         const body = await readJson(request);
+        const agent = await agentFor(issue);
         if (!chat[2]) {
           const text = String(body.text ?? "").trim();
           if (!text || text.length > 20_000)
             return send(response, 400, {
               error: "Cần nội dung tin nhắn (tối đa 20.000 ký tự)",
             });
-          relay.push({ type: "message", issue, text });
+          relay.push(agent, { type: "message", issue, text });
         } else if (chat[2] === "answer") {
           const answers = Object.fromEntries(
             Object.entries(body.answers ?? {})
@@ -288,7 +326,7 @@ export function createBoard({
                 String(a).slice(0, 5000),
               ]),
           );
-          relay.push({
+          relay.push(agent, {
             type: "answer",
             issue,
             id: String(body.id ?? "").slice(0, 64),
@@ -296,8 +334,29 @@ export function createBoard({
             answers,
             note: String(body.note ?? "").slice(0, 5000),
           });
-        } else relay.push({ type: chat[2], issue });
-        return send(response, 202, { ok: true, online: relay.online() });
+        } else relay.push(agent, { type: chat[2], issue });
+        return send(response, 202, {
+          ok: true,
+          agent,
+          online: relay.online(agent),
+        });
+      }
+      const assign = url.pathname.match(/^\/api\/features\/(\d+)\/agent$/);
+      if (request.method === "POST" && assign) {
+        if (!named.length)
+          return send(response, 404, {
+            error: "Board chưa có agent nào có tên",
+          });
+        const { agent } = await readJson(request);
+        if (!named.includes(agent))
+          return send(response, 400, { error: "Không có agent này" });
+        const issue = Number(assign[1]);
+        const result = await assignAgent(github, issue, agent);
+        // The old agent stops at once instead of on its next tracker pass.
+        if (result.before && result.before in tokens && result.changed)
+          relay.push(result.before, { type: "unassigned", issue });
+        cache = null;
+        return send(response, 200, { agent, ...result });
       }
       const comments = url.pathname.match(/^\/api\/features\/(\d+)\/comments$/);
       if (request.method === "GET" && comments)
@@ -347,6 +406,33 @@ export function createBoard({
   };
 }
 
+// AGENT_TOKENS="luan-mac=<token>,friend-mac=<token>": one token per agent, so
+// each can be told apart and revoked on its own.
+export function parseAgentTokens(text) {
+  const tokens = {};
+  for (const pair of String(text)
+    .split(/[,\n]/)
+    .map((p) => p.trim())
+    .filter(Boolean)) {
+    const at = pair.indexOf("=");
+    const name = pair.slice(0, at).trim();
+    const token = pair.slice(at + 1).trim();
+    if (at < 1 || !agentName.test(name))
+      throw new Error(
+        `AGENT_TOKENS: "${name || pair.slice(0, 20)}" is not a valid agent name (a-z, 0-9, -)`,
+      );
+    if (token.length < 32)
+      throw new Error(
+        `AGENT_TOKENS: the token for ${name} needs 32+ characters`,
+      );
+    if (name in tokens) throw new Error(`AGENT_TOKENS: ${name} appears twice`);
+    if (Object.values(tokens).includes(token))
+      throw new Error("AGENT_TOKENS: each agent needs its own token");
+    tokens[name] = token;
+  }
+  return tokens;
+}
+
 export async function main(env = process.env) {
   const manifest = await readProject();
   if (manifest.tracker?.kind !== "github")
@@ -358,6 +444,7 @@ export async function main(env = process.env) {
   const agentToken = env.AGENT_TOKEN ?? "";
   if (agentToken && agentToken.length < 32)
     throw new Error("AGENT_TOKEN must be at least 32 characters");
+  const agentTokens = parseAgentTokens(env.AGENT_TOKENS ?? "");
   const repo = manifest.tracker.repo;
   const handle = createBoard({
     project: manifest.project.name,
@@ -368,6 +455,7 @@ export async function main(env = process.env) {
     secure: env.BOARD_INSECURE_COOKIE !== "1",
     github: createGitHub({ repo, token: env.GITHUB_TOKEN.trim() }),
     agentToken,
+    agentTokens,
   });
   const port = Number(env.PORT ?? 8080);
   createServer(handle).listen(port, env.HOST ?? "0.0.0.0", () =>

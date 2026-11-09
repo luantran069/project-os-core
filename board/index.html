@@ -67,9 +67,17 @@
       }
       button,
       input,
+      select,
       textarea {
         font: inherit;
         color: inherit;
+      }
+      select {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: var(--bg);
+        max-width: 100%;
       }
       button {
         border: 1px solid var(--line);
@@ -711,22 +719,97 @@
         idle: "Claude rảnh",
         "waiting-owner": "Claude chờ bạn",
         "taken-over": "Bạn đang tiếp quản",
+        reassigned: "Đã chuyển sang agent khác",
         failed: "Lượt cuối bị lỗi",
       };
 
+      // Named agents: each Claude orchestrator that can take features.
+      const namedAgents = () => state.data.agent?.agents ?? [];
+      // A feature with no agent waits, unless an unnamed agent takes those.
+      const needsAgent = (feature) =>
+        namedAgents().length > 0 &&
+        !feature.agent &&
+        !state.data.agent?.unnamed &&
+        feature.stage !== "done";
+
       function agentChip(feature) {
-        const info = state.data.agent?.features?.[feature.number];
-        if (!info) return null;
-        if (info.requests)
-          return el(
-            "span",
-            { class: "chip agent-request" },
-            "Claude cần bạn duyệt",
+        const chips = [];
+        if (feature.agent)
+          chips.push(el("span", { class: "chip" }, `Agent: ${feature.agent}`));
+        else if (needsAgent(feature))
+          chips.push(
+            el("span", { class: "chip agent-request" }, "Chưa giao agent"),
           );
+        const info = state.data.agent?.features?.[feature.number];
+        // Ignore what an agent that lost the feature last said.
+        if (info && (info.agent || null) === (feature.agent || null))
+          chips.push(
+            info.requests
+              ? el(
+                  "span",
+                  { class: "chip agent-request" },
+                  "Claude cần bạn duyệt",
+                )
+              : el(
+                  "span",
+                  { class: `chip agent-${info.status}` },
+                  agentStatus[info.status] ?? info.status,
+                ),
+          );
+        return chips;
+      }
+
+      // Pick which agent works on a feature.
+      function agentPicker(feature, hasSession, onChange) {
+        const agents = namedAgents();
+        if (!agents.length) return null;
+        const error = el("div", { class: "error" });
+        const select = el(
+          "select",
+          { "aria-label": "Agent" },
+          el("option", { value: "" }, "— Chọn agent —"),
+          agents.map((a) =>
+            el(
+              "option",
+              { value: a.name },
+              `${a.name}${a.online ? "" : " (mất kết nối)"}`,
+            ),
+          ),
+        );
+        select.value = feature.agent ?? "";
+        const button = el("button", {}, feature.agent ? "Đổi agent" : "Giao");
+        button.addEventListener("click", async () => {
+          const agent = select.value;
+          if (!agent || agent === feature.agent) return;
+          if (
+            feature.agent &&
+            !confirm(
+              hasSession()
+                ? `Chuyển sang ${agent}? Phiên Claude hiện tại nằm trên máy ${feature.agent}; ${agent} sẽ bắt đầu phiên mới và đọc lại issue cùng Agent Workpad.`
+                : `Chuyển feature sang ${agent}?`,
+            )
+          )
+            return;
+          button.disabled = true;
+          error.textContent = "";
+          try {
+            await call(`/api/features/${feature.number}/agent`, { agent });
+            feature.agent = agent;
+            button.textContent = "Đổi agent";
+            onChange?.();
+            load(true);
+          } catch (e) {
+            error.textContent = e.message;
+          }
+          button.disabled = false;
+        });
         return el(
-          "span",
-          { class: `chip agent-${info.status}` },
-          agentStatus[info.status] ?? info.status,
+          "div",
+          { class: "resume" },
+          el("span", {}, "Agent:"),
+          select,
+          button,
+          error,
         );
       }
 
@@ -955,7 +1038,11 @@
                 ? el("span", {}, `${s.turns} lượt · $${s.costUsd.toFixed(2)}`)
                 : null,
               s
-                ? el("span", {}, s.host === "dokploy" ? "Dokploy" : "Mac")
+                ? el(
+                    "span",
+                    {},
+                    `${s.agent ? `${s.agent} · ` : ""}${s.host === "dokploy" ? "Dokploy" : "Mac"}`,
+                  )
                 : null,
             ].filter(Boolean),
           );
@@ -1022,10 +1109,25 @@
           if (node.isConnected) timer = setTimeout(refresh, 2000);
         }
 
+        const hint = el(
+          "p",
+          { class: "meta" },
+          "Giao feature cho một agent để Claude bắt đầu làm và nhận tin nhắn.",
+        );
+        hint.hidden = !needsAgent(feature);
         const node = el(
           "div",
           { class: "chat" },
           el("h4", {}, "Phiên Claude"),
+          agentPicker(
+            feature,
+            () => Boolean(latest?.sessionId),
+            () => {
+              hint.hidden = !needsAgent(feature);
+              refresh();
+            },
+          ),
+          hint,
           head,
           log,
           requests,

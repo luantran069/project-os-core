@@ -1,4 +1,4 @@
-import { stageOf } from "../board/github.mjs";
+import { assignedAgent, stageOf } from "../board/github.mjs";
 import { boardMessage, render } from "./prompt.mjs";
 
 // Connects the owner's commands and the tracker to the feature sessions.
@@ -8,6 +8,9 @@ import { boardMessage, render } from "./prompt.mjs";
 //   implementation, and only the owner adds it.
 // - A chat message from the board resumes the session at any stage. Before
 //   `ready` the agent may read, discuss and refine the plan, but not build.
+// - With several agents, each takes only the features labelled
+//   `agent:<its name>`. An agent without a name takes only unlabelled ones.
+//   When a feature moves to another agent, this one stops.
 
 export const discussionPrompt = (
   issue,
@@ -36,8 +39,10 @@ export function createController({
   runner,
   workspaces,
   workflowPrompt,
+  agent = null,
   log = console.error,
 }) {
+  const mine = (issue) => assignedAgent(issue) === (agent || null);
   const hasReady = (issue) =>
     (issue.labels ?? []).some(
       (label) =>
@@ -62,14 +67,18 @@ export function createController({
   // One pass over the tracker: start features that just got `ready`, and note
   // the ones that lost it so a later `ready` (rework) resumes them.
   async function tick() {
-    const open = await gh.pages(
-      `${gh.base}/issues?state=open&labels=${encodeURIComponent(labels.ready)}`,
-      3,
+    const open = (await gh.pages(`${gh.base}/issues?state=open`, 5)).filter(
+      (i) => !i.pull_request,
     );
+    const byNumber = new Map(open.map((i) => [i.number, i]));
+    // Features given to another agent since the last pass.
+    for (const record of store.list()) {
+      const issue = byNumber.get(record.issue);
+      if (issue && !mine(issue) && record.status !== "reassigned")
+        runner.detach(record.issue);
+    }
     const ready = new Map(
-      open
-        .filter((i) => !i.pull_request && hasReady(i))
-        .map((i) => [i.number, i]),
+      open.filter((i) => hasReady(i) && mine(i)).map((i) => [i.number, i]),
     );
     for (const record of store.list())
       if (record.dispatchedReady && !ready.has(record.issue))
@@ -92,10 +101,15 @@ export function createController({
 
   async function message(number, text) {
     const record = store.get(number);
-    if (record.sessionId) return runner.send(number, boardMessage(text));
+    if (record.sessionId && record.status !== "reassigned")
+      return runner.send(number, boardMessage(text));
     // First contact: give the new session its bearings, then the message.
     const issue = await gh.request(`${gh.base}/issues/${number}`);
     if (issue.pull_request) throw new Error(`#${number} is a pull request`);
+    if (!mine(issue))
+      throw new Error(
+        `#${number} is assigned to ${assignedAgent(issue) ?? "no agent"}`,
+      );
     const workspace = await workspaces.prepare(number);
     const ready = issue.state === "open" && hasReady(issue);
     const intro = ready
@@ -122,6 +136,8 @@ export function createController({
         return runner.takeOver(issue);
       case "release":
         return runner.release(issue);
+      case "unassigned":
+        return runner.detach(issue);
       default:
         throw new Error(`unknown command ${command.type}`);
     }

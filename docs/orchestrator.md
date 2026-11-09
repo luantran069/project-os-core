@@ -66,6 +66,7 @@ Environment:
 | Variable                  | Where      | Value                                                                  |
 | ------------------------- | ---------- | ---------------------------------------------------------------------- |
 | `AGENT_TOKEN`             | Both sides | The same random string, at least 32 characters                         |
+| `AGENT_NAME`              | Orchestr.  | This agent's name when several share a board; see below                |
 | `BOARD_URL`               | Orchestr.  | The board's address; https unless local or an internal hostname        |
 | `GITHUB_TOKEN`            | Orchestr.  | A token for the agent's `gh`: issues, PRs and contents read/write      |
 | `ORCHESTRATOR_STATE`      | Orchestr.  | State folder; defaults to `.orchestrator/` in the project              |
@@ -104,7 +105,23 @@ either host without editing `project.yaml`; keep `runtime.host: mac` there as th
 default for running by hand. Moving between the two means stopping the orchestrator in
 one place, starting it in the other, and copying the state folder and
 `~/.claude/projects/` across if the running sessions should come along. Run only one
-orchestrator per project.
+orchestrator per project, unless they have different names (below).
+
+## Several agents on one board
+
+Each orchestrator that shares a board sets `AGENT_NAME` (for example `luan-mac`,
+`friend-mac`, `dokploy`) and its own `AGENT_TOKEN`; the board lists the pairs in
+`AGENT_TOKENS` (see "Several agents" in [the board docs](board.md)).
+
+- A named agent takes only the features labelled `agent:<its name>`. One without a name
+  takes only features without an `agent:` label.
+- If the board knows the token under another name, the orchestrator stops at start-up
+  instead of acting for that agent.
+- When the owner moves a feature to another agent, this one stops its turn, refuses what
+  it was waiting on, keeps the session id in `previousSessions` in its state file and
+  never touches the feature again unless it comes back, which starts a new session.
+- Each agent needs its own GitHub token and Claude login, and its own copy of the
+  repository's access (the SSH key or deploy key for the clone hook).
 
 ## Limits of this version
 

@@ -7,6 +7,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export function createRelay({
   boardUrl,
   token,
+  agent = "",
   fetchImpl = fetch,
   log = console.error,
 }) {
@@ -72,12 +73,25 @@ export function createRelay({
   async function listen(onCommand, { waitSeconds = 25 } = {}) {
     while (!stopped) {
       try {
-        const { commands = [] } = await call(
+        const { agent: seen, commands = [] } = await call(
           `/api/agent/inbox?wait=${waitSeconds}`,
           {
             timeoutMs: (waitSeconds + 10) * 1000,
           },
         );
+        // The board names the agent by its token. A mismatch means this
+        // machine holds another agent's token: stop rather than act for it.
+        if (seen !== undefined && seen !== agent) {
+          stopped = true;
+          for (const command of commands)
+            log(`Ignored ${command?.type} for #${command?.issue}`);
+          throw Object.assign(
+            new Error(
+              `AGENT_NAME is "${agent}" but the board knows this token as "${seen}". Fix AGENT_NAME or the token.`,
+            ),
+            { fatal: true },
+          );
+        }
         for (const command of commands) {
           try {
             await onCommand(command);
@@ -88,6 +102,7 @@ export function createRelay({
           }
         }
       } catch (error) {
+        if (error.fatal) throw error;
         if (stopped) break;
         log(`Orchestrator could not poll the board: ${error.message}`);
         await sleep(error.status === 401 ? 30_000 : 3000);

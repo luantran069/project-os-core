@@ -78,6 +78,32 @@ terminal. Cards show the session's status. The orchestrator reaches the board on
 cookie never works there and the token never works on the owner's routes. Without
 `AGENT_TOKEN` those routes return 404 and the board works as before.
 
+## Several agents
+
+To let more than one orchestrator work on the same board (the owner's Mac, a friend's
+Mac, Dokploy), give each its own name and token:
+
+```text
+AGENT_TOKENS=luan-mac=<32+ characters>,friend-mac=<32+ characters>
+```
+
+Names use `a-z`, `0-9` and dashes. Each orchestrator sets the matching `AGENT_NAME` and
+`AGENT_TOKEN`. The board knows who is calling from the token alone, so one agent cannot
+read or answer for another, and one token can be revoked without touching the rest.
+
+The owner picks the agent in the "Phiên Claude" panel. The board then sets the issue's
+`agent:<name>` label (removing any other `agent:` label) and comments on the issue.
+Only that agent starts the feature when it gets `ready`, and chat, answers and
+take-over go to it alone. A feature without an `agent:` label waits: the card shows
+"Chưa giao agent" and no message can be sent until it has one.
+
+Moving a feature to another agent stops the old one at once. Its Claude session stays on
+its machine; the new agent starts a new session and reads the issue and its Agent
+Workpad to pick up the work. The panel asks before moving a feature that has a session.
+
+`AGENT_TOKEN` can stay alongside `AGENT_TOKENS`. Its agent has no name and takes the
+features with no `agent:` label, as before 0.7.0.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues

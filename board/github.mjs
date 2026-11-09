@@ -36,6 +36,16 @@ export function closedIssues(body) {
   return [...String(body ?? "").matchAll(closingRef)].map((m) => Number(m[1]));
 }
 
+// The agent a feature is assigned to, from its `agent:<name>` label, or null.
+export const agentPrefix = "agent:";
+export function assignedAgent(issue) {
+  for (const label of issue.labels ?? []) {
+    const name = lower(typeof label === "string" ? label : label.name);
+    if (name.startsWith(agentPrefix)) return name.slice(agentPrefix.length);
+  }
+  return null;
+}
+
 export function priorityOf(issue) {
   for (const label of issue.labels ?? []) {
     const name = lower(label.name).replace(/^priority[:\s-]*/, "");
@@ -331,6 +341,7 @@ export async function loadBoard(gh, labels, { closedLimit = 20 } = {}) {
         body: issue.body ?? "",
         stage: stageOf(issue, labels),
         priority: priorityOf(issue),
+        agent: assignedAgent(issue),
         labels: (issue.labels ?? []).map((label) => label.name),
         updated: issue.updated_at,
         comments: issue.comments ?? 0,
@@ -492,6 +503,37 @@ export async function applyAction(gh, labels, number, action, note = "") {
       },
     });
   return { stage, action, merged };
+}
+
+// Gives a feature to one agent: its `agent:<name>` label replaces any other.
+// Returns the agent it had before, or null.
+export async function assignAgent(gh, number, agent) {
+  const issue = await gh.request(`${gh.base}/issues/${number}`);
+  if (issue.pull_request)
+    throw Object.assign(new Error("Not a feature"), { status: 400 });
+  const before = assignedAgent(issue);
+  if (before === agent) return { before, changed: false };
+  for (const label of issue.labels ?? [])
+    if (lower(label.name).startsWith(agentPrefix))
+      await gh.request(
+        `${gh.base}/issues/${number}/labels/${encodeURIComponent(label.name)}`,
+        { method: "DELETE" },
+      );
+  await gh.request(`${gh.base}/issues/${number}/labels`, {
+    method: "POST",
+    body: { labels: [`${agentPrefix}${agent}`] },
+  });
+  const lines = [`**Giao cho agent \`${agent}\`** (chủ dự án, từ board)`];
+  if (before)
+    lines.push(
+      "",
+      `Trước đó là \`${before}\`. Agent mới bắt đầu một phiên Claude mới và đọc lại issue cùng Agent Workpad; phiên cũ vẫn nằm trên máy của \`${before}\`.`,
+    );
+  await gh.request(`${gh.base}/issues/${number}/comments`, {
+    method: "POST",
+    body: { body: lines.join("\n") },
+  });
+  return { before, changed: true };
 }
 
 export async function createIdea(gh, labels, title, body = "") {
