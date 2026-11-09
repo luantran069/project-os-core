@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2 (2026-11-09)
+
+- The terminal command now opens the session with Remote Control on, named after the
+  project and issue (`claude --resume <id> --remote-control '<project> #<n>'`), so it can
+  be followed from claude.ai/code and the Claude app. Sessions the orchestrator runs
+  through the Agent SDK do not start Remote Control themselves, even with
+  `remoteControlAtStartup`, so this happens when the owner opens the session.
+- The command sits under the chat, outside the "Phiên Claude" panel.
+- The feature popup is wider (up to 1120 px) and the chat shows more lines.
+- Redeploy the board after syncing.
+
 ## 0.7.1 (2026-11-09)
 
 - The "Phiên Claude" panel always shows the command that opens the session in a

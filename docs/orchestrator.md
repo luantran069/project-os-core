@@ -86,7 +86,9 @@ board's own secrets.
    `npm run orchestrator:start` and leave it running.
 4. Features live in `.orchestrator/workspaces/<issue>`. To continue one by hand, press
    "Ngưng chạy, tự tiếp quản" and run the command it shows:
-   `cd '<workspace>' && claude --resume <session id>`.
+   `cd '<workspace>' && claude --resume <session id> --remote-control '<project> #<issue>'`.
+   Remote Control lets you follow it from claude.ai/code or the Claude app; the
+   orchestrator's own Agent SDK turns do not start Remote Control.
 
 ## On Dokploy
 
