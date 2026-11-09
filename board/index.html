@@ -198,6 +198,9 @@
         max-height: calc(100vh - 48px);
         padding: 0;
       }
+      dialog.feature {
+        width: min(1120px, calc(100vw - 32px));
+      }
       dialog::backdrop {
         background: rgb(0 0 0 / 0.4);
       }
@@ -351,7 +354,7 @@
         display: flex;
         flex-direction: column;
         gap: 14px;
-        max-height: 55vh;
+        max-height: 62vh;
         min-height: 120px;
         overflow-y: auto;
         padding: 6px 14px 4px;
@@ -536,7 +539,7 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
       .takeover {
-        margin: 0 14px;
+        margin: 12px 0 0;
         border: 1px dashed var(--line);
         border-radius: 10px;
         padding: 10px 12px;
@@ -1127,10 +1130,15 @@
       }
 
       const quote = (path) => `'${String(path).replaceAll("'", "'\\''")}'`;
-      const resumeCommand = (s) =>
-        s.host === "dokploy"
-          ? `docker exec -it <container> sh -lc "cd ${quote(s.workspace)} && claude --resume ${s.sessionId}"`
-          : `cd ${quote(s.workspace)} && claude --resume ${s.sessionId}`;
+      // Opens the session in a terminal with Remote Control on, so it can also be
+      // followed from claude.ai/code and the Claude app. Sessions the orchestrator
+      // runs through the Agent SDK do not start Remote Control themselves.
+      const resumeCommand = (s, name) => {
+        const claude = `claude --resume ${s.sessionId} --remote-control ${quote(name)}`;
+        return s.host === "dokploy"
+          ? `docker exec -it <container> sh -lc "cd ${quote(s.workspace)} && ${claude}"`
+          : `cd ${quote(s.workspace)} && ${claude}`;
+      };
 
       // Inline Markdown: `code`, **bold**, [text](https://…) and bare https links.
       // Builds DOM nodes, never HTML, so agent text cannot inject markup.
@@ -1279,7 +1287,9 @@
         const status = el("span", { class: "pill" }, "Đang kết nối…");
         const meta = el("span", { class: "meta" });
         const requests = el("div", { class: "requests" });
+        // Lives outside the chat, under it in the feature's popup.
         const takeover = el("div", { class: "takeover", hidden: "" });
+        const sessionName = `${state.data.project} #${number}`;
         const error = el("div", { class: "error" });
         const input = el("textarea", {
           rows: "1",
@@ -1537,7 +1547,9 @@
           // The command to open this session in a terminal is always shown;
           // it is redrawn only when it changes, so "Đã chép" stays put.
           const canResume = Boolean(s?.sessionId && s.workspace);
-          const resumeKey = canResume ? `${takenOver}|${resumeCommand(s)}` : "";
+          const resumeKey = canResume
+            ? `${takenOver}|${resumeCommand(s, sessionName)}`
+            : "";
           takeover.hidden = !canResume;
           takeover.classList.toggle("quiet", !takenOver);
           if (canResume && resumeKey !== shownResume)
@@ -1547,9 +1559,9 @@
                 {},
                 takenOver
                   ? "Claude đã dừng. Chạy lệnh này trong terminal để tự tiếp tục phiên, rồi bấm “Trả lại cho Claude” khi xong:"
-                  : "Mở phiên này trong terminal. Bấm “Ngưng chạy, tự tiếp quản” trước khi mở, để Claude không chạy cùng lúc với bạn:",
+                  : "Mở phiên này trong terminal, có bật Remote Control để theo dõi tiếp trên claude.ai/code hoặc app Claude. Bấm “Ngưng chạy, tự tiếp quản” trước khi mở, để Claude không chạy cùng lúc với bạn:",
               ),
-              el("code", {}, resumeCommand(s)),
+              el("code", {}, resumeCommand(s, sessionName)),
               el(
                 "div",
                 { class: "actions" },
@@ -1557,7 +1569,9 @@
                   "button",
                   {
                     onclick: (e) => {
-                      navigator.clipboard?.writeText(resumeCommand(s));
+                      navigator.clipboard?.writeText(
+                        resumeCommand(s, sessionName),
+                      );
                       e.target.textContent = "Đã chép";
                     },
                   },
@@ -1645,15 +1659,19 @@
           ),
           transcript,
           requests,
-          takeover,
           el("div", { class: "composer" }, input, sendButton),
           error,
         );
-        return { node, start: refresh, stop: () => clearTimeout(timer) };
+        return {
+          node,
+          terminal: takeover,
+          start: refresh,
+          stop: () => clearTimeout(timer),
+        };
       }
 
       function openFeature(feature, column) {
-        const dialog = el("dialog");
+        const dialog = el("dialog", { class: "feature" });
         const error = el("div", { class: "error" });
         const note = el("textarea", {
           rows: "3",
@@ -1763,6 +1781,7 @@
             workpad,
             sessions,
             chat?.node,
+            chat?.terminal,
             actionButtons.length ? el("h4", {}, "Quyết định") : null,
             actionButtons.length ? note : null,
             actionButtons.length ? notePicker.node : null,
