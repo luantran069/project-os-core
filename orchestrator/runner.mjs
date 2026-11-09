@@ -215,7 +215,7 @@ export function createRunner({
       failure = abort.signal.aborted ? null : error;
     }
     const now = store.get(issue);
-    if (now.status === "taken-over")
+    if (now.status === "taken-over" || now.status === "reassigned")
       return publish(issue, { kind: "status", status: now.status });
     const ok =
       !failure && result && result.subtype === "success" && !result.is_error;
@@ -255,6 +255,35 @@ export function createRunner({
     publish(issue, { kind: "status", status: "taken-over" });
   }
 
+  // The feature went to another agent: stop here for good. The session stays
+  // on this machine for reference; if the feature comes back, it starts anew.
+  function detach(issue) {
+    const record = store.get(issue);
+    if (record.status === "reassigned" && !busy(issue)) return;
+    for (const [, request] of pending)
+      if (request.issue === issue)
+        request.finish(
+          {
+            behavior: "deny",
+            message: "The feature was given to another agent.",
+            interrupt: true,
+          },
+          "cancelled",
+        );
+    queues.delete(issue);
+    active.get(issue)?.abort();
+    store.update(issue, {
+      status: "reassigned",
+      sessionId: null,
+      dispatchedReady: false,
+      previousSessions: [
+        ...(record.previousSessions ?? []),
+        ...(record.sessionId ? [record.sessionId] : []),
+      ],
+    });
+    publish(issue, { kind: "status", status: "reassigned" });
+  }
+
   function release(issue) {
     if (store.get(issue).status !== "taken-over") return;
     store.update(issue, { status: "idle" });
@@ -269,5 +298,14 @@ export function createRunner({
   const busy = (issue) =>
     active.has(issue) || (queues.get(issue)?.length ?? 0) > 0;
 
-  return { send, answer, takeOver, release, snapshot, stopAll, busy };
+  return {
+    send,
+    answer,
+    takeOver,
+    detach,
+    release,
+    snapshot,
+    stopAll,
+    busy,
+  };
 }

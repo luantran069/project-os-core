@@ -14,6 +14,7 @@ import { createStore } from "./store.mjs";
 import { createWorkspaces } from "./workspace.mjs";
 
 export const hosts = ["mac", "dokploy"];
+export const agentNamePattern = /^[a-z0-9][a-z0-9-]{0,30}$/;
 
 // Never hand the board link's credentials to the agent.
 const privateKeys = [
@@ -65,10 +66,16 @@ export function configure(manifest, env) {
     errors.push(
       "On Dokploy set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY",
     );
+  // With several agents on one board, each has a name and takes only the
+  // features labelled agent:<name>. Without one it takes unlabelled features.
+  const agent = env.AGENT_NAME?.trim() || "";
+  if (agent && !agentNamePattern.test(agent))
+    errors.push("AGENT_NAME may use a-z, 0-9 and dashes, up to 31 characters");
   if (errors.length) throw new Error(errors.join("\n"));
   const claude = runtime.claude ?? {};
   return {
     host,
+    agent,
     repo: manifest.tracker.repo,
     labels: manifest.labels ?? {},
     maxConcurrent: Number(runtime.max_concurrent_agents ?? 1),
@@ -100,6 +107,7 @@ export async function main(env = process.env) {
   const relay = createRelay({
     boardUrl: env.BOARD_URL,
     token: env.AGENT_TOKEN,
+    agent: settings.agent,
   });
   const emit = (issue, event, state) =>
     relay.emit(issue, event, state && { ...state, host: settings.host });
@@ -128,13 +136,16 @@ export async function main(env = process.env) {
       hooks: workflow.config?.hooks,
     }),
     workflowPrompt: workflow.prompt,
+    agent: settings.agent,
   });
 
   // Tell the board what exists, then keep telling it so it knows we are alive.
+  // Features that moved to another agent are left out: the board shows theirs.
   const announce = () => {
-    for (const record of store.list())
+    const own = store.list().filter((r) => r.status !== "reassigned");
+    for (const record of own)
       emit(record.issue, { kind: "heartbeat" }, runner.snapshot(record.issue));
-    if (!store.list().length) relay.emit(0, { kind: "heartbeat" });
+    if (!own.length) relay.emit(0, { kind: "heartbeat" });
   };
   announce();
   const heartbeat = setInterval(announce, 30_000);
@@ -157,9 +168,15 @@ export async function main(env = process.env) {
       setTimeout(() => process.exit(0), 1000).unref();
     });
   console.log(
-    `Claude orchestrator for ${settings.repo} on ${settings.host}, board ${new URL(env.BOARD_URL).origin}`,
+    `Claude orchestrator${settings.agent ? ` "${settings.agent}"` : ""} for ${settings.repo} on ${settings.host}, board ${new URL(env.BOARD_URL).origin}`,
   );
-  await relay.listen((command) => controller.handle(command));
+  try {
+    await relay.listen((command) => controller.handle(command));
+  } finally {
+    clearInterval(poller);
+    clearInterval(heartbeat);
+    runner.stopAll();
+  }
 }
 
 if (

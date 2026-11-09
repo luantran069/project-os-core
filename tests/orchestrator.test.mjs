@@ -416,7 +416,7 @@ test("configure picks the host and keeps the board link's secrets from the agent
 
 test("the board relay keeps only fields the panel shows", () => {
   const relay = createBoardRelay();
-  relay.receive({
+  relay.receive("", {
     events: [
       { issue: 3, kind: "assistant", text: "hi", extra: "<script>" },
       { issue: 3, kind: "bogus" },
@@ -496,7 +496,7 @@ test("the orchestrator's routes need its token, not the owner's cookie", () =>
     const ok = await fetch(`${base}/api/agent/inbox?wait=0`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    assert.deepEqual(await ok.json(), { commands: [] });
+    assert.deepEqual(await ok.json(), { agent: "", commands: [] });
     assert.equal(
       (await owner("/api/features/3/chat", { text: "" })).status,
       400,

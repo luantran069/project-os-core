@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 (2026-11-09)
+
+- Several Claude orchestrators can share one board, and the owner gives each feature to
+  one of them. The board takes `AGENT_TOKENS=name=token,...`; each orchestrator sets
+  `AGENT_NAME` and its own `AGENT_TOKEN`. The "Phiên Claude" panel has an agent picker
+  that sets the issue's `agent:<name>` label, and cards show the agent or "Chưa giao
+  agent". A named agent takes only its labelled features; moving a feature stops the old
+  agent, and the new one starts a new session from the issue and the workpad. See
+  "Several agents" in `docs/board.md` and ADR-0002.
+- A single `AGENT_TOKEN` with no `AGENT_NAME` works as before: that agent takes the
+  features without an `agent:` label.
+- The inbox reply names the agent. An orchestrator whose `AGENT_NAME` does not match
+  stops instead of acting for another agent.
+- Redeploy the board and restart the orchestrators after syncing.
+
 ## 0.6.2 (2026-11-09)
 
 - The board's "Phiên Claude" panel reads like a chat app. The owner's messages are

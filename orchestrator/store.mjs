@@ -17,6 +17,7 @@ import { join } from "node:path";
 //   idle           the last turn ended; the owner can write at any time
 //   waiting-owner  the agent asked something and ended its turn
 //   taken-over     the owner continues by hand; the orchestrator stays out
+//   reassigned     the feature went to another agent; this one stays out
 //   failed         the last turn ended with an error
 export const statuses = [
   "new",
@@ -24,6 +25,7 @@ export const statuses = [
   "idle",
   "waiting-owner",
   "taken-over",
+  "reassigned",
   "failed",
 ];
 
