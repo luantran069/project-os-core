@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 (2026-11-09)
+
+- The "Phiên Claude" panel always shows the command that opens the session in a
+  terminal (`cd '<workspace>' && claude --resume <id>`) with a copy button, not only
+  after "Ngưng chạy, tự tiếp quản". Until then it says to stop Claude before opening
+  it, so the two do not write to the session at once. Redeploy the board after syncing.
+
 ## 0.7.0 (2026-11-09)
 
 - Several Claude orchestrators can share one board, and the owner gives each feature to

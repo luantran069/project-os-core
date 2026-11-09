@@ -547,6 +547,21 @@
       .takeover[hidden] {
         display: none;
       }
+      .takeover.quiet {
+        border-style: solid;
+        font-size: 13px;
+        color: var(--muted);
+        gap: 6px;
+        padding: 8px 10px;
+      }
+      .takeover.quiet code {
+        color: var(--text);
+        padding: 6px 8px;
+      }
+      .takeover.quiet button {
+        font-size: 13px;
+        padding: 3px 10px;
+      }
       .takeover code {
         background: var(--chip);
         border-radius: 6px;
@@ -1242,6 +1257,7 @@
         let timer = null;
         let latest = null;
         let shownRequests = "";
+        let shownResume = "";
         let steps = null;
         const answered = new Set();
         const transcript = el(
@@ -1518,13 +1534,20 @@
             : "Ngưng chạy, tự tiếp quản";
           takeButton.className = takenOver ? "primary" : "";
           takeButton.disabled = !s?.sessionId;
-          takeover.hidden = !(takenOver && s.workspace);
-          if (takenOver && s.workspace)
+          // The command to open this session in a terminal is always shown;
+          // it is redrawn only when it changes, so "Đã chép" stays put.
+          const canResume = Boolean(s?.sessionId && s.workspace);
+          const resumeKey = canResume ? `${takenOver}|${resumeCommand(s)}` : "";
+          takeover.hidden = !canResume;
+          takeover.classList.toggle("quiet", !takenOver);
+          if (canResume && resumeKey !== shownResume)
             takeover.replaceChildren(
               el(
                 "div",
                 {},
-                "Claude đã dừng. Chạy lệnh này trong terminal để tự tiếp tục phiên, rồi bấm “Trả lại cho Claude” khi xong:",
+                takenOver
+                  ? "Claude đã dừng. Chạy lệnh này trong terminal để tự tiếp tục phiên, rồi bấm “Trả lại cho Claude” khi xong:"
+                  : "Mở phiên này trong terminal. Bấm “Ngưng chạy, tự tiếp quản” trước khi mở, để Claude không chạy cùng lúc với bạn:",
               ),
               el("code", {}, resumeCommand(s)),
               el(
@@ -1542,6 +1565,7 @@
                 ),
               ),
             );
+          shownResume = resumeKey;
           // Redraw only when the open requests change, so a half-written
           // answer survives the next refresh.
           const open = (s?.requests ?? []).filter((r) => !answered.has(r.id));
