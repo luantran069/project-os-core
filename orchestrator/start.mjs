@@ -33,9 +33,13 @@ export function configure(manifest, env) {
     );
   if (manifest.tracker?.kind !== "github")
     errors.push("The Claude orchestrator needs tracker.kind: github");
-  const host = runtime.host ?? "mac";
+  // Where it runs belongs to the machine, not the repository: ORCHESTRATOR_HOST
+  // wins over runtime.host, so one commit runs on the Mac or on Dokploy.
+  const host = env.ORCHESTRATOR_HOST?.trim() || runtime.host || "mac";
   if (!hosts.includes(host))
-    errors.push(`runtime.host must be one of ${hosts.join(", ")}`);
+    errors.push(
+      `${env.ORCHESTRATOR_HOST?.trim() ? "ORCHESTRATOR_HOST" : "runtime.host"} must be one of ${hosts.join(", ")}`,
+    );
   if (!env.BOARD_URL?.trim())
     errors.push("Set BOARD_URL to the board's address");
   else {
