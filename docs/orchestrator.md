@@ -29,9 +29,11 @@ flowchart LR
   outside the workspace wait for "Allow" or "Deny". After
   `runtime.claude.approval_timeout_minutes` (30) without an answer, the step is refused
   and the feature waits for the owner.
-- "Ngưng chạy, tự tiếp quản" (stop and take over) stops the running turn and shows the
-  command that continues the session by hand. The orchestrator leaves the feature alone,
-  keeping new messages, until "Trả lại cho Claude" (hand back to Claude).
+- The panel always shows the command that continues the session by hand. "Ngưng chạy,
+  tự tiếp quản" (stop and take over) stops the running turn first; the orchestrator then
+  leaves the feature alone, keeping new messages, until "Trả lại cho Claude" (hand back
+  to Claude). Stop Claude before opening the session, so the two do not write to it at
+  once.
 
 The orchestrator only calls out to the board. The board never calls the orchestrator,
 so a Mac behind a home router needs no open port or tunnel.
