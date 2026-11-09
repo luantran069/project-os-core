@@ -253,51 +253,332 @@
         border-radius: 6px;
         border: 1px solid var(--line);
       }
-      .chat {
+      /* The feature's Claude conversation, laid out like a chat app. */
+      .convo {
         display: grid;
+        gap: 10px;
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .convo-head {
+        display: flex;
+        align-items: center;
         gap: 8px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
       }
-      .chat-log {
-        display: grid;
-        gap: 6px;
-        max-height: 45vh;
-        overflow-y: auto;
-        padding: 2px;
+      .convo-head strong {
+        margin-right: 4px;
       }
-      .chat-log > * {
+      .convo-head .meta {
+        flex: 1 1 140px;
         min-width: 0;
       }
-      .chat-log .message .text {
+      .convo-head .meta span,
+      .pill {
+        white-space: nowrap;
+      }
+      .convo-head button {
+        font-size: 13px;
+        padding: 4px 10px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 2px 10px 2px 8px;
+        background: var(--chip);
+        color: var(--muted);
+      }
+      .pill::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .pill[data-state="running"] {
+        color: var(--accent);
+      }
+      .pill[data-state="running"]::before {
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .pill[data-state="waiting-owner"],
+      .pill[data-state="request"] {
+        color: var(--warn);
+      }
+      .pill[data-state="failed"],
+      .pill[data-state="offline"] {
+        color: var(--bad);
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      .transcript {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-height: 55vh;
+        min-height: 120px;
+        overflow-y: auto;
+        padding: 6px 14px 4px;
+      }
+      .transcript > * {
+        min-width: 0;
+      }
+      .transcript .empty {
+        margin: auto;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+      }
+      .bubble {
+        align-self: flex-end;
+        max-width: 85%;
+        background: var(--chip);
+        border-radius: 18px 18px 4px 18px;
+        padding: 8px 14px;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
       }
+      .reply {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+      }
+      .avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+        margin-top: 2px;
+      }
+      .md {
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+      .md > :first-child {
+        margin-top: 0;
+      }
+      .md > :last-child {
+        margin-bottom: 0;
+      }
+      .md p,
+      .md ul,
+      .md ol,
+      .md pre {
+        margin: 0 0 10px;
+      }
+      .md ul,
+      .md ol {
+        padding-left: 22px;
+      }
+      .md li + li {
+        margin-top: 2px;
+      }
+      .md h5 {
+        font-size: 15px;
+        margin: 12px 0 6px;
+      }
+      .md code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88em;
+        background: var(--chip);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .md pre {
+        background: var(--chip);
+        border-radius: 8px;
+        padding: 10px 12px;
+        overflow-x: auto;
+      }
+      .md pre code {
+        background: none;
+        padding: 0;
+        white-space: pre;
+      }
+      .steps {
+        margin-left: 36px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .steps summary {
+        cursor: pointer;
+        list-style: none;
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .steps summary::-webkit-details-marker {
+        display: none;
+      }
+      .steps summary::before {
+        content: "›";
+        display: inline-block;
+        transition: transform 0.15s;
+      }
+      .steps[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .steps ol {
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0 0 0 12px;
+        border-left: 2px solid var(--line);
+        display: grid;
+        gap: 4px;
+      }
+      .steps li {
+        overflow-wrap: anywhere;
+      }
+      .steps b {
+        color: var(--text);
+        font-weight: 600;
+        margin-right: 6px;
+      }
+      .note {
+        align-self: center;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .note.failed {
+        color: var(--bad);
+      }
+      .typing {
+        margin-left: 36px;
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px 0;
+      }
+      .typing span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .typing span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .typing span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      .requests {
+        display: grid;
+        gap: 8px;
+        padding: 0 14px;
+      }
+      .requests:empty {
+        display: none;
+      }
       .request {
-        border: 1px solid var(--warn, #c08a00);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--warn);
+        background: var(--panel);
         border-radius: 10px;
         padding: 10px 12px;
         display: grid;
-        gap: 6px;
+        gap: 8px;
+      }
+      .request .actions {
+        margin-top: 0;
       }
       .request button[aria-pressed="true"] {
-        border-color: var(--accent, currentColor);
-        outline: 2px solid var(--accent, currentColor);
+        border-color: var(--accent);
+        outline: 2px solid var(--accent);
       }
       .request pre,
-      .resume code {
+      .takeover code {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         margin: 0;
         font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      .resume {
-        display: flex;
+      .takeover {
+        margin: 0 14px;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
         gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
+        font-size: 14px;
+      }
+      .takeover[hidden] {
+        display: none;
+      }
+      .takeover code {
+        background: var(--chip);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .takeover .actions {
+        margin-top: 0;
+      }
+      .composer {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        margin: 0 14px 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+        padding: 8px 8px 8px 14px;
+      }
+      .composer:focus-within {
+        border-color: var(--accent);
+      }
+      .composer textarea {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        padding: 6px 0;
+        resize: none;
+        max-height: 200px;
+        line-height: 1.45;
+        outline: none;
+      }
+      .composer .send {
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .composer .send svg {
+        width: 18px;
+        height: 18px;
+      }
+      .convo > .error {
+        margin: 0 14px 10px;
+      }
+      .convo > .error:empty {
+        display: none;
       }
       .chip.agent-waiting-owner,
       .chip.agent-request {
-        background: var(--warn, #c08a00);
+        background: var(--warn);
         color: #fff;
       }
       .session {
@@ -736,8 +1017,124 @@
           ? `docker exec -it <container> sh -lc "cd ${quote(s.workspace)} && claude --resume ${s.sessionId}"`
           : `cd ${quote(s.workspace)} && claude --resume ${s.sessionId}`;
 
-      // The feature's Claude session: live log, owner's questions and approvals,
-      // a message box, and the command to continue it in a terminal.
+      // Inline Markdown: `code`, **bold**, [text](https://…) and bare https links.
+      // Builds DOM nodes, never HTML, so agent text cannot inject markup.
+      const inlinePattern =
+        /`([^`\n]+)`|\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https:\/\/[^)\s]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+      function inline(text) {
+        const parts = [];
+        let last = 0;
+        for (const m of text.matchAll(inlinePattern)) {
+          parts.push(text.slice(last, m.index));
+          if (m[1] !== undefined) parts.push(el("code", {}, m[1]));
+          else if (m[2] !== undefined) parts.push(el("strong", {}, m[2]));
+          else {
+            const href = safeUrl(m[4] ?? m[5]);
+            parts.push(
+              href
+                ? el(
+                    "a",
+                    { href, target: "_blank", rel: "noopener" },
+                    m[3] ?? m[5],
+                  )
+                : m[0],
+            );
+          }
+          last = m.index + m[0].length;
+        }
+        parts.push(text.slice(last));
+        return parts;
+      }
+
+      // The block Markdown an agent writes: paragraphs, headings, bullet and
+      // numbered lists, and fenced code.
+      function markdown(text) {
+        const out = [];
+        const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+        let paragraph = [];
+        let list = null;
+        const flush = () => {
+          if (paragraph.length) {
+            const p = el("p");
+            paragraph.forEach((line, i) => {
+              if (i) p.append(el("br"));
+              p.append(...inline(line));
+            });
+            out.push(p);
+            paragraph = [];
+          }
+          list = null;
+        };
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (/^\s*```/.test(line)) {
+            flush();
+            const code = [];
+            for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++)
+              code.push(lines[i]);
+            out.push(el("pre", {}, el("code", {}, code.join("\n"))));
+            continue;
+          }
+          const heading = line.match(/^#{1,6}\s+(.*)$/);
+          const item = line.match(/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/);
+          if (!line.trim()) flush();
+          else if (heading) {
+            flush();
+            out.push(el("h5", {}, ...inline(heading[1])));
+          } else if (item) {
+            if (paragraph.length) {
+              const keep = list;
+              flush();
+              list = keep;
+            }
+            const tag = item[1] ? "ul" : "ol";
+            if (!list || list.tagName.toLowerCase() !== tag) {
+              list = el(tag);
+              out.push(list);
+            }
+            list.append(el("li", {}, ...inline(item[3])));
+          } else if (list && /^\s{2,}\S/.test(line))
+            list.lastChild.append(" ", ...inline(line.trim()));
+          else {
+            list = null;
+            paragraph.push(line);
+          }
+        }
+        flush();
+        return out;
+      }
+
+      const sendIcon = () => {
+        const svg = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "svg",
+        );
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+        const path = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        path.setAttribute("d", "M12 19V5M5 12l7-7 7 7");
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", "2.2");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        svg.append(path);
+        return svg;
+      };
+
+      const outcomeText = {
+        allowed: "Bạn đã cho phép",
+        denied: "Bạn đã từ chối",
+        answered: "Bạn đã trả lời",
+        timeout: "Hết giờ chờ bạn",
+        cancelled: "Yêu cầu đã huỷ",
+      };
+
+      // The feature's Claude session as a chat: the owner on the right, Claude
+      // on the left, tool steps folded, questions and approvals above the box.
       function chatPanel(feature) {
         const number = feature.number;
         const path = `/api/features/${number}/chat`;
@@ -745,106 +1142,162 @@
         let timer = null;
         let latest = null;
         let shownRequests = "";
+        let steps = null;
         const answered = new Set();
-        const log = el("div", { class: "chat-log", "aria-live": "polite" });
-        const head = el("p", { class: "meta" });
-        const resume = el("div", { class: "resume" });
-        const requests = el("div", { class: "chat" });
+        const transcript = el(
+          "div",
+          { class: "transcript", "aria-live": "polite" },
+          el(
+            "p",
+            { class: "empty" },
+            "Chưa có trao đổi nào. Nhắn để bắt đầu một phiên Claude cho feature này.",
+          ),
+        );
+        const typing = el(
+          "div",
+          { class: "typing", "aria-label": "Claude đang làm" },
+          el("span"),
+          el("span"),
+          el("span"),
+        );
+        const status = el("span", { class: "pill" }, "Đang kết nối…");
+        const meta = el("span", { class: "meta" });
+        const requests = el("div", { class: "requests" });
+        const takeover = el("div", { class: "takeover", hidden: "" });
         const error = el("div", { class: "error" });
         const input = el("textarea", {
-          rows: "3",
-          placeholder: "Nhắn cho Claude về feature này (Ctrl+Enter để gửi)",
+          rows: "1",
+          placeholder: "Nhắn cho Claude…",
+          title: "Enter để gửi, Shift+Enter để xuống dòng",
+          "aria-label": "Tin nhắn cho Claude",
         });
-        const sendButton = el("button", { class: "primary" }, "Gửi");
-        const takeButton = el("button", {}, "Tiếp quản trong terminal");
+        const sendButton = el(
+          "button",
+          {
+            class: "send",
+            title: "Gửi",
+            "aria-label": "Gửi",
+            disabled: "",
+          },
+          sendIcon(),
+        );
+        const takeButton = el(
+          "button",
+          { disabled: "" },
+          "Ngưng chạy, tự tiếp quản",
+        );
 
         const post = async (suffix, body) => {
           error.textContent = "";
           try {
             await call(`${path}${suffix}`, body);
             refresh();
+            return true;
           } catch (e) {
             error.textContent = e.message;
+            return false;
           }
+        };
+        const grow = () => {
+          input.style.height = "auto";
+          input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+          sendButton.disabled = !input.value.trim();
         };
         const send = async () => {
           const text = input.value.trim();
-          if (!text) return;
+          if (!text || sendButton.dataset.busy) return;
+          sendButton.dataset.busy = "1";
           sendButton.disabled = true;
-          await post("", { text });
-          input.value = "";
-          sendButton.disabled = false;
+          if (await post("", { text })) {
+            input.value = "";
+            transcript.scrollTop = transcript.scrollHeight;
+          }
+          delete sendButton.dataset.busy;
+          grow();
+          input.focus();
         };
-        sendButton.addEventListener("click", send);
+        input.addEventListener("input", grow);
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
+          // Vietnamese and other IMEs use Enter to confirm a word.
+          if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+          e.preventDefault();
+          send();
         });
+        sendButton.addEventListener("click", send);
         takeButton.addEventListener("click", () => {
           if (latest?.status === "taken-over") return post("/release", {});
           if (
             confirm(
-              "Dừng lượt đang chạy và để bạn tự tiếp tục phiên này trong terminal?",
+              "Ngưng lượt Claude đang chạy để bạn tự tiếp tục phiên này trong terminal? Claude sẽ không làm gì cho feature này cho tới khi bạn trả lại.",
             )
           )
             post("/takeover", {});
         });
 
+        function append(node) {
+          transcript.querySelector(".empty")?.remove();
+          transcript.insertBefore(node, typing.isConnected ? typing : null);
+        }
+
         function entry(event) {
+          if (event.kind !== "tool") steps = null;
           if (event.kind === "owner")
             return el(
               "div",
-              { class: "message user" },
-              el("div", { class: "meta" }, `Bạn · ${when(event.at)}`),
-              el("div", { class: "text" }, event.text),
+              { class: "bubble", title: when(event.at) },
+              event.text,
             );
           if (event.kind === "assistant")
             return el(
               "div",
-              { class: "message" },
-              el("div", { class: "meta" }, `Claude · ${when(event.at)}`),
-              el("div", { class: "text" }, event.text),
+              { class: "reply", title: when(event.at) },
+              el("div", { class: "avatar", "aria-hidden": "true" }, "✳"),
+              el("div", { class: "md" }, ...markdown(event.text)),
             );
-          if (event.kind === "tool")
+          if (event.kind === "tool") {
+            const row = el("li", {}, el("b", {}, event.name), event.summary);
+            if (steps) {
+              steps.list.append(row);
+              steps.count += 1;
+              steps.label.textContent = `${steps.count} bước · ${event.name}`;
+              return null;
+            }
+            const list = el("ol", {}, row);
+            const label = el("span", {}, `1 bước · ${event.name}`);
+            steps = { list, label, count: 1 };
             return el(
-              "div",
-              { class: "step" },
-              `${event.name} · ${event.summary}`,
+              "details",
+              { class: "steps" },
+              el("summary", {}, label),
+              list,
             );
-          if (event.kind === "request")
-            return el(
-              "div",
-              { class: "step" },
-              event.requestKind === "question"
-                ? "Claude hỏi bạn"
-                : `Xin duyệt: ${event.reason}`,
-            );
+          }
           if (event.kind === "request-closed")
             return el(
               "div",
-              { class: "step" },
-              `Đã xử lý yêu cầu (${event.outcome})`,
+              { class: "note" },
+              outcomeText[event.outcome] ?? event.outcome,
             );
           if (event.kind === "result")
             return el(
               "div",
-              { class: `step${event.ok ? "" : " failed"}` },
-              `${event.ok ? "Xong lượt" : "Lượt lỗi"} · $${event.costUsd.toFixed(2)}`,
+              { class: `note${event.ok ? "" : " failed"}` },
+              `${event.ok ? "Xong lượt" : "Lượt bị lỗi"} · $${event.costUsd.toFixed(2)}`,
             );
           if (event.kind === "error")
-            return el("div", { class: "step failed" }, event.text);
-          if (event.kind === "status")
-            return el(
-              "div",
-              { class: "step" },
-              agentStatus[event.status] ?? event.status,
-            );
+            return el("div", { class: "note failed" }, event.text);
+          if (
+            event.kind === "status" &&
+            ["taken-over", "failed"].includes(event.status)
+          )
+            return el("div", { class: "note" }, agentStatus[event.status]);
           return null;
         }
 
         function requestCard(request) {
           const note = el("textarea", {
             rows: "2",
-            placeholder: "Ghi chú (tuỳ chọn)",
+            placeholder: "Ghi chú cho Claude (tuỳ chọn)",
           });
           const done = (body) => {
             answered.add(request.id);
@@ -855,7 +1308,7 @@
             return el(
               "div",
               { class: "request" },
-              el("strong", {}, `Claude xin duyệt: ${request.reason}`),
+              el("strong", {}, `Claude xin phép: ${request.reason}`),
               el("pre", {}, request.summary),
               note,
               el(
@@ -896,8 +1349,8 @@
               value: () => free.value.trim() || [...chosen].join(", "),
               node: el(
                 "div",
-                {},
-                el("p", {}, q.question),
+                { class: "md" },
+                el("p", {}, ...inline(q.question)),
                 el("div", { class: "actions" }, options),
                 free,
               ),
@@ -934,51 +1387,60 @@
         function show(view) {
           latest = view.state;
           const s = view.state;
-          head.replaceChildren(
-            ...[
-              el(
-                "span",
-                { class: "chip" },
-                view.online
-                  ? "Orchestrator đang chạy"
-                  : "Orchestrator mất kết nối",
-              ),
-              s
-                ? el(
-                    "span",
-                    { class: `chip agent-${s.status}` },
-                    agentStatus[s.status] ?? s.status,
-                  )
-                : el("span", {}, "Chưa có phiên Claude"),
-              s?.queued ? el("span", {}, `${s.queued} tin chờ`) : null,
-              s
-                ? el("span", {}, `${s.turns} lượt · $${s.costUsd.toFixed(2)}`)
-                : null,
-              s
-                ? el("span", {}, s.host === "dokploy" ? "Dokploy" : "Mac")
-                : null,
-            ].filter(Boolean),
-          );
-          takeButton.textContent =
-            s?.status === "taken-over"
-              ? "Trả lại cho orchestrator"
-              : "Tiếp quản trong terminal";
-          takeButton.disabled = !s?.sessionId;
-          resume.replaceChildren(
-            ...(s?.sessionId && s.workspace
+          const pending = (s?.requests ?? []).length;
+          const kind = !view.online
+            ? "offline"
+            : pending
+              ? "request"
+              : (s?.status ?? "new");
+          status.dataset.state = kind;
+          status.textContent = !view.online
+            ? "Orchestrator mất kết nối"
+            : pending
+              ? "Claude cần bạn"
+              : (agentStatus[s?.status] ?? "Chưa có phiên");
+          meta.replaceChildren(
+            ...(s
               ? [
-                  el("code", {}, resumeCommand(s)),
-                  el(
-                    "button",
-                    {
-                      onclick: () =>
-                        navigator.clipboard?.writeText(resumeCommand(s)),
-                    },
-                    "Chép lệnh",
-                  ),
+                  `${s.turns} lượt`,
+                  `$${s.costUsd.toFixed(2)}`,
+                  s.host === "dokploy" ? "Dokploy" : "Mac",
+                  s.queued ? `${s.queued} tin đang chờ` : null,
                 ]
+                  .filter(Boolean)
+                  .map((t) => el("span", {}, t))
               : []),
           );
+          const takenOver = s?.status === "taken-over";
+          takeButton.textContent = takenOver
+            ? "Trả lại cho Claude"
+            : "Ngưng chạy, tự tiếp quản";
+          takeButton.className = takenOver ? "primary" : "";
+          takeButton.disabled = !s?.sessionId;
+          takeover.hidden = !(takenOver && s.workspace);
+          if (takenOver && s.workspace)
+            takeover.replaceChildren(
+              el(
+                "div",
+                {},
+                "Claude đã dừng. Chạy lệnh này trong terminal để tự tiếp tục phiên, rồi bấm “Trả lại cho Claude” khi xong:",
+              ),
+              el("code", {}, resumeCommand(s)),
+              el(
+                "div",
+                { class: "actions" },
+                el(
+                  "button",
+                  {
+                    onclick: (e) => {
+                      navigator.clipboard?.writeText(resumeCommand(s));
+                      e.target.textContent = "Đã chép";
+                    },
+                  },
+                  "Chép lệnh",
+                ),
+              ),
+            );
           // Redraw only when the open requests change, so a half-written
           // answer survives the next refresh.
           const open = (s?.requests ?? []).filter((r) => !answered.has(r.id));
@@ -995,21 +1457,29 @@
                   ? el(
                       "div",
                       { class: "request" },
-                      el("strong", {}, "Claude đang chờ bạn trả lời"),
-                      el("pre", {}, s.question),
+                      el(
+                        "strong",
+                        {},
+                        "Claude đang chờ bạn trả lời trong ô chat",
+                      ),
+                      el("div", { class: "md" }, ...markdown(s.question)),
                     )
                   : null,
               ].filter(Boolean),
             );
           }
           const stick =
-            log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+            transcript.scrollTop + transcript.clientHeight >=
+            transcript.scrollHeight - 40;
           for (const event of view.events) {
             const node = entry(event);
-            if (node) log.append(node);
+            if (node) append(node);
           }
           if (view.events.length) after = view.events.at(-1).seq;
-          if (stick) log.scrollTop = log.scrollHeight;
+          if (s?.status === "running") {
+            if (!typing.isConnected) transcript.append(typing);
+          } else typing.remove();
+          if (stick) transcript.scrollTop = transcript.scrollHeight;
         }
 
         async function refresh() {
@@ -1023,15 +1493,20 @@
         }
 
         const node = el(
-          "div",
-          { class: "chat" },
-          el("h4", {}, "Phiên Claude"),
-          head,
-          log,
+          "section",
+          { class: "convo", "aria-label": "Phiên Claude" },
+          el(
+            "div",
+            { class: "convo-head" },
+            el("strong", {}, "Phiên Claude"),
+            status,
+            meta,
+            takeButton,
+          ),
+          transcript,
           requests,
-          input,
-          el("div", { class: "actions" }, sendButton, takeButton),
-          resume,
+          takeover,
+          el("div", { class: "composer" }, input, sendButton),
           error,
         );
         return { node, start: refresh, stop: () => clearTimeout(timer) };
