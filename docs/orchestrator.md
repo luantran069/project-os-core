@@ -29,9 +29,9 @@ flowchart LR
   outside the workspace wait for "Allow" or "Deny". After
   `runtime.claude.approval_timeout_minutes` (30) without an answer, the step is refused
   and the feature waits for the owner.
-- "Take over in a terminal" stops the running turn and shows the command that
-  continues the session by hand. The orchestrator leaves the feature alone, keeping new
-  messages, until "Hand back".
+- "Ngưng chạy, tự tiếp quản" (stop and take over) stops the running turn and shows the
+  command that continues the session by hand. The orchestrator leaves the feature alone,
+  keeping new messages, until "Trả lại cho Claude" (hand back to Claude).
 
 The orchestrator only calls out to the board. The board never calls the orchestrator,
 so a Mac behind a home router needs no open port or tunnel.
@@ -82,7 +82,7 @@ board's own secrets.
 3. In the project, put `AGENT_TOKEN`, `BOARD_URL` and `GITHUB_TOKEN` in `.env`, then run
    `npm run orchestrator:start` and leave it running.
 4. Features live in `.orchestrator/workspaces/<issue>`. To continue one by hand, press
-   "Take over in a terminal" and run the command it shows:
+   "Ngưng chạy, tự tiếp quản" and run the command it shows:
    `cd '<workspace>' && claude --resume <session id>`.
 
 ## On Dokploy

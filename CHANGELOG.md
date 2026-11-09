@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.2 (2026-11-09)
+
+- The board's "Phiên Claude" panel reads like a chat app. The owner's messages are
+  bubbles on the right; Claude's replies are on the left with their Markdown rendered
+  (headings, bold, lists, inline and fenced code, https links), built as DOM nodes so
+  agent text cannot inject markup. Tool calls fold into one "N bước" row per run of
+  steps, a typing indicator shows while Claude works, and turn results are small notes.
+- The send button sits inside the message box. Enter sends, Shift+Enter adds a line,
+  and Enter that confirms a Vietnamese IME word does not send.
+- "Tiếp quản trong terminal" is now "Ngưng chạy, tự tiếp quản", and hand-back is
+  "Trả lại cho Claude". The `claude --resume` command shows only while taken over.
+- Redeploy the board after syncing.
+
 ## 0.6.1 (2026-11-09)
 
 - The orchestrator's host comes from the environment. `ORCHESTRATOR_HOST` (`mac` or
