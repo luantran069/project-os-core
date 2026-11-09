@@ -44,7 +44,7 @@ In `project.yaml`:
 runtime:
   orchestrator: claude
   agent: claude
-  host: mac # mac | dokploy
+  host: mac # default; ORCHESTRATOR_HOST overrides it
   max_concurrent_agents: 1
   claude: # all optional
     model: null # Claude Code's default when null
@@ -63,13 +63,14 @@ to `package.json` if the project predates core 0.6.0.
 
 Environment:
 
-| Variable                  | Where      | Value                                                             |
-| ------------------------- | ---------- | ----------------------------------------------------------------- |
-| `AGENT_TOKEN`             | Both sides | The same random string, at least 32 characters                    |
-| `BOARD_URL`               | Orchestr.  | The board's address; https unless local or an internal hostname   |
-| `GITHUB_TOKEN`            | Orchestr.  | A token for the agent's `gh`: issues, PRs and contents read/write |
-| `ORCHESTRATOR_STATE`      | Orchestr.  | State folder; defaults to `.orchestrator/` in the project         |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Dokploy    | From `claude setup-token`; or set `ANTHROPIC_API_KEY`             |
+| Variable                  | Where      | Value                                                                  |
+| ------------------------- | ---------- | ---------------------------------------------------------------------- |
+| `AGENT_TOKEN`             | Both sides | The same random string, at least 32 characters                         |
+| `BOARD_URL`               | Orchestr.  | The board's address; https unless local or an internal hostname        |
+| `GITHUB_TOKEN`            | Orchestr.  | A token for the agent's `gh`: issues, PRs and contents read/write      |
+| `ORCHESTRATOR_STATE`      | Orchestr.  | State folder; defaults to `.orchestrator/` in the project              |
+| `ORCHESTRATOR_HOST`       | Orchestr.  | `mac` or `dokploy`; overrides `runtime.host`. The image sets `dokploy` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Dokploy    | From `claude setup-token`; or set `ANTHROPIC_API_KEY`                  |
 
 The agent's environment gets everything except `AGENT_TOKEN`, `BOARD_URL` and the
 board's own secrets.
@@ -97,9 +98,13 @@ board's own secrets.
 4. No domain or port is needed. To take over, open the container's terminal in Dokploy
    and run the command the board shows inside it.
 
-Moving between the two means changing `runtime.host`, starting the orchestrator in the
-other place and copying the state folder and `~/.claude/projects/` across if the
-running sessions should come along. Run only one orchestrator per project.
+The host comes from `ORCHESTRATOR_HOST` when it is set, else from `runtime.host`, else
+`mac`. The Dokploy image sets `ORCHESTRATOR_HOST=dokploy`, so the same commit runs on
+either host without editing `project.yaml`; keep `runtime.host: mac` there as the
+default for running by hand. Moving between the two means stopping the orchestrator in
+one place, starting it in the other, and copying the state folder and
+`~/.claude/projects/` across if the running sessions should come along. Run only one
+orchestrator per project.
 
 ## Limits of this version
 

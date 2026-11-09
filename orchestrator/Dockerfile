@@ -1,4 +1,4 @@
-# Project OS Claude orchestrator for runtime.host: dokploy. Build from the project root:
+# Project OS Claude orchestrator on Dokploy (sets ORCHESTRATOR_HOST=dokploy). Build from the project root:
 #   docker build -f .project-os/orchestrator/Dockerfile .
 # Mount a volume at /data: it holds feature state, workspaces and the Claude
 # sessions (/data/home/.claude), which must survive redeploys.
@@ -15,7 +15,7 @@ RUN npm init -y >/dev/null \
 COPY project.yaml WORKFLOW.md ./
 COPY .project-os/ .project-os/
 RUN mkdir -p /data/home && chown -R node:node /data
-ENV NODE_ENV=production HOME=/data/home ORCHESTRATOR_STATE=/data
+ENV NODE_ENV=production HOME=/data/home ORCHESTRATOR_STATE=/data ORCHESTRATOR_HOST=dokploy
 VOLUME /data
 USER node
 CMD ["node", ".project-os/orchestrator/start.mjs"]

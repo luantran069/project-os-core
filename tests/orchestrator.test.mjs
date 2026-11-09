@@ -611,3 +611,48 @@ test("owner and orchestrator talk through the board end to end", () =>
       }
     }),
   ));
+
+test("ORCHESTRATOR_HOST picks the host without editing project.yaml", () => {
+  const env = {
+    BOARD_URL: "http://board:8080",
+    AGENT_TOKEN: token,
+    GITHUB_TOKEN: "g",
+  };
+  const onMac = {
+    runtime: { orchestrator: "claude", host: "mac" },
+    tracker: { kind: "github", repo: "a/b" },
+  };
+  // The Dokploy image sets ORCHESTRATOR_HOST=dokploy; project.yaml says mac.
+  const server = configure(onMac, {
+    ...env,
+    ORCHESTRATOR_HOST: "dokploy",
+    CLAUDE_CODE_OAUTH_TOKEN: "c",
+  });
+  assert.equal(server.host, "dokploy");
+  assert.throws(
+    () => configure(onMac, { ...env, ORCHESTRATOR_HOST: "dokploy" }),
+    /CLAUDE_CODE_OAUTH_TOKEN/,
+  );
+  // On the Mac the variable is unset, or says mac over a dokploy project.yaml.
+  assert.equal(configure(onMac, env).host, "mac");
+  const onServer = {
+    ...onMac,
+    runtime: { orchestrator: "claude", host: "dokploy" },
+  };
+  assert.equal(
+    configure(onServer, { ...env, ORCHESTRATOR_HOST: "mac" }).host,
+    "mac",
+  );
+  assert.equal(
+    configure(onServer, {
+      ...env,
+      ORCHESTRATOR_HOST: " ",
+      CLAUDE_CODE_OAUTH_TOKEN: "c",
+    }).host,
+    "dokploy",
+  );
+  assert.throws(
+    () => configure(onMac, { ...env, ORCHESTRATOR_HOST: "vps" }),
+    /ORCHESTRATOR_HOST must be one of mac, dokploy/,
+  );
+});

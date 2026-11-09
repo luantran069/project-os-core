@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 (2026-11-09)
+
+- The orchestrator's host comes from the environment. `ORCHESTRATOR_HOST` (`mac` or
+  `dokploy`) overrides `runtime.host`, and the Dokploy image sets it to `dokploy`, so
+  one commit runs on the Mac or on Dokploy without editing `project.yaml`. Keep
+  `runtime.host: mac` as the default. Rebuild the orchestrator image after syncing.
+
 ## 0.6.0 (2026-11-07)
 
 - A Claude orchestrator: one resumable Claude session per feature, linked to the board.
