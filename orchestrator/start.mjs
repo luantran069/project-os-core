@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createGitHub } from "../board/github.mjs";
+import { createGitHub, isChatAgent } from "../board/github.mjs";
 import {
   projectRoot,
   readProject,
@@ -72,6 +72,10 @@ export function configure(manifest, env) {
   const agent = env.AGENT_NAME?.trim() || "";
   if (agent && !agentNamePattern.test(agent))
     errors.push("AGENT_NAME may use a-z, 0-9 and dashes, up to 31 characters");
+  else if (isChatAgent(agent))
+    errors.push(
+      'AGENT_NAME "chat" and "chat-…" are reserved for the owner\'s chat, which no orchestrator runs',
+    );
   let review = null;
   try {
     review = reviewSettings(manifest);

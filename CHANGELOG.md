@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.11.0 (2026-11-10)
+
+- The owner's chat can build a feature itself (ADR-0006, from happy-clink's ADR-0010). A
+  new MCP tool, `claim_feature(number, suffix?)`, takes a feature in Ready (so G2 still
+  decides), sets `agent:chat` or `agent:chat-<suffix>` and the in-progress label, stops
+  the orchestrator that had it, leaves a signed comment and returns the rendered
+  `WORKFLOW.md` prompt an agent would get, read from the default branch, followed by a
+  short section for the chat. That section replaces the workflow's "the coding agent
+  never merges": never add `ai_review`, hand off with `human_review`, and once CI is
+  green review the diff with `get_pull_request` and merge with `decide approve` (or
+  block the feature if CI cannot pass). Orchestrator agents never get it.
+- `chat` and `chat-<suffix>` (lowercase letters, digits, dashes; 31 characters in all)
+  are reserved agent names that need no token: every chat uses the MCP token.
+  `assign_agent` accepts them; `AGENT_TOKENS` and `AGENT_NAME` may not use them. The card
+  shows "Chat: `<name>`", and `agent_session`, `message_agent`, `answer_agent` and
+  `control_agent` answer that no orchestrator session exists instead of failing with
+  "chưa được khai báo".
+- No orchestrator takes a chat's feature, the unnamed one included, so chat features do
+  not count towards `max_concurrent_agents`, and no AI reviewer (`gates.merge: ai`)
+  reviews or merges a chat's pull request: the chat decides it over MCP. Moving a feature away from the unnamed
+  orchestrator now stops it at once, as a named one already was.
+- A running chat feature whose Agent Workpad has not changed for
+  `runtime.chat.stale_hours` hours (default 24) gets a warning on its card and in
+  `board_overview` (`warnings`) and `get_feature`. The board only warns.
+  `check-project` checks the setting.
+- On a Symphony project the board refuses chat names, since Symphony reads only the
+  ready label.
+- The board image also copies `.project-os/orchestrator/prompt.mjs`. Redeploy the board
+  after syncing, and restart the orchestrators so they skip chat features.
+
 ## 0.10.0 (2026-11-10)
 
 - An AI reviewer can decide pull requests for the owner. With `gates.merge: ai` in

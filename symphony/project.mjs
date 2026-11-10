@@ -27,7 +27,11 @@ export const slug = (name) =>
     .replace(/^-|-$/g, "");
 
 export async function readWorkflow(root = projectRoot()) {
-  const text = await readFile(join(root, "WORKFLOW.md"), "utf8");
+  return parseWorkflow(await readFile(join(root, "WORKFLOW.md"), "utf8"));
+}
+
+// WORKFLOW.md's YAML frontmatter (config) and the agent prompt after it.
+export function parseWorkflow(text) {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/);
   if (!match)
     throw new Error("WORKFLOW.md needs YAML frontmatter and a nonempty prompt");

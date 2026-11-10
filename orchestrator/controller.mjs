@@ -1,5 +1,5 @@
-import { assignedAgent, stageOf } from "../board/github.mjs";
-import { boardMessage, render } from "./prompt.mjs";
+import { assignedAgent, isChatAgent, stageOf } from "../board/github.mjs";
+import { boardMessage, workflowTurn as renderTurn } from "./prompt.mjs";
 
 // Connects the owner's commands and the tracker to the feature sessions.
 //
@@ -11,6 +11,8 @@ import { boardMessage, render } from "./prompt.mjs";
 // - With several agents, each takes only the features labelled
 //   `agent:<its name>`. An agent without a name takes only unlabelled ones.
 //   When a feature moves to another agent, this one stops.
+// - No orchestrator takes a feature the owner's chat holds (`agent:chat` or
+//   `agent:chat-<suffix>`), so moving a feature to a chat stops this one too.
 
 export const discussionPrompt = (
   issue,
@@ -22,15 +24,6 @@ Read AGENTS.md, memory/vision.md, memory/decisions/ and the issue with its comme
 (\`gh issue view ${issue.number} --comments\`). Discuss, read the code, and propose or refine
 the plan. Do not create branches, commits or pull requests until the owner adds
 "${labels.ready}". Edit the issue body only when the owner asks you to write the plan there.`;
-
-const issueScope = (issue) => ({
-  identifier: `#${issue.number}`,
-  number: issue.number,
-  title: issue.title,
-  state: issue.state,
-  url: issue.html_url,
-  description: issue.body ?? "",
-});
 
 export function createController({
   gh,
@@ -44,7 +37,10 @@ export function createController({
   reviewer = null,
   log = console.error,
 }) {
-  const mine = (issue) => assignedAgent(issue) === (agent || null);
+  const mine = (issue) => {
+    const assigned = assignedAgent(issue);
+    return !isChatAgent(assigned) && assigned === (agent || null);
+  };
   const hasReady = (issue) =>
     (issue.labels ?? []).some(
       (label) =>
@@ -52,7 +48,7 @@ export function createController({
     );
 
   const workflowTurn = (issue, attempt) =>
-    render(workflowPrompt, { issue: issueScope(issue), attempt });
+    renderTurn(workflowPrompt, issue, attempt);
 
   async function startWork(issue) {
     const record = store.get(issue.number);

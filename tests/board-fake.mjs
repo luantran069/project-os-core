@@ -84,6 +84,12 @@ export function fakeGitHub() {
   };
   const writes = [];
   const pullFiles = {};
+  // WORKFLOW.md on the default branch, and the time new comments get.
+  const repo = {
+    workflow:
+      "---\ntracker:\n  kind: github\n---\n\nImplement {{ issue.identifier }} {{ issue.title }}.\n{% if attempt %}Attempt {{ attempt }}.{% else %}First attempt.{% endif %}\n",
+    now: at,
+  };
   const diffs = {
     40:
       "diff --git a/web/src/Detail.tsx b/web/src/Detail.tsx\n" +
@@ -162,7 +168,8 @@ export function fakeGitHub() {
     if (method === "POST" && (m = path.match(/^\/issues\/(\d+)\/comments$/))) {
       (comments[m[1]] ??= []).push({
         user: { login: "board" },
-        created_at: at,
+        created_at: repo.now,
+        updated_at: repo.now,
         body: body.body,
       });
       return json({}, 201);
@@ -225,6 +232,13 @@ export function fakeGitHub() {
       imageFiles.set(m[1], body.content);
       return json({}, 201);
     }
+    if (method === "GET" && path === "/contents/WORKFLOW.md") {
+      assert.equal(url.searchParams.get("ref"), null);
+      assert.equal(init.headers.Accept, "application/vnd.github.raw");
+      return repo.workflow === null
+        ? json({ message: "secret detail" }, 404)
+        : new Response(repo.workflow);
+    }
     if (method === "GET" && (m = path.match(/^\/contents\/sessions\/(.+)$/))) {
       assert.equal(url.searchParams.get("ref"), "board-sessions");
       assert.equal(init.headers.Accept, "application/vnd.github.raw");
@@ -253,5 +267,6 @@ export function fakeGitHub() {
     imageFiles,
     sessionFiles,
     diffs,
+    repo,
   };
 }

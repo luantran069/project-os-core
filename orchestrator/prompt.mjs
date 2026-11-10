@@ -19,6 +19,20 @@ export function render(template, scope) {
   });
 }
 
+// What a WORKFLOW.md prompt can name about the issue it is rendered for.
+export const issueScope = (issue) => ({
+  identifier: `#${issue.number}`,
+  number: issue.number,
+  title: issue.title,
+  state: issue.state,
+  url: issue.html_url,
+  description: issue.body ?? "",
+});
+
+// The first turn of an approved feature: the WORKFLOW.md prompt for one issue.
+export const workflowTurn = (template, issue, attempt = null) =>
+  render(template, { issue: issueScope(issue), attempt });
+
 // Appended to Claude Code's own system prompt for every turn.
 export const runtimeNotes = ({ host, labels }) => `
 You run under the Project OS Claude orchestrator on the ${host === "dokploy" ? "Dokploy server" : "owner's Mac"}.

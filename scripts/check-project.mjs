@@ -136,6 +136,14 @@ export async function checkProject(directory) {
     if (manifest?.tracker?.kind !== "github")
       errors.push("The Claude orchestrator needs tracker.kind: github");
   }
+  const staleHours = manifest?.runtime?.chat?.stale_hours;
+  if (
+    staleHours !== undefined &&
+    !(typeof staleHours === "number" && staleHours > 0)
+  )
+    errors.push(
+      "project.yaml runtime.chat.stale_hours must be a number above 0",
+    );
   if (orchestrator === "symphony") {
     try {
       await checkWorkflow(false, root);

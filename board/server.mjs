@@ -2,19 +2,26 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { readProject } from "../symphony/project.mjs";
+import { workflowTurn } from "../orchestrator/prompt.mjs";
+import { parseWorkflow, readProject } from "../symphony/project.mjs";
 import {
   applyAction,
   assignAgent,
   assignedAgent,
+  chatAgent,
+  chatPromptSection,
+  claimFeature,
   createGitHub,
   createIdea,
+  defaultStaleHours,
   imageExtension,
   imageTypes,
+  isChatAgent,
   loadBoard,
   loadComments,
   loadImage,
   loadSession,
+  loadWorkflowText,
   maxImageBytes,
   uploadImage,
 } from "./github.mjs";
@@ -99,6 +106,8 @@ export function createBoard({
   mcpToken = "",
   mcpTokens = {},
   version = "0",
+  staleHours = defaultStaleHours,
+  orchestrator = "claude",
 }) {
   let cache = null;
   // Agent name -> token. "" is the unnamed agent of a single AGENT_TOKEN,
@@ -108,10 +117,19 @@ export function createBoard({
   // Set when the board is linked to at least one Claude orchestrator.
   const relay = Object.keys(tokens).length ? createRelay({ now }) : null;
   const caller = (header = "") => callerOf(tokens, header);
+  // The owner's chat holds a feature: it has no orchestrator session.
+  const noSession = (number, name) =>
+    Object.assign(
+      new Error(
+        `Feature #${number} do chat \`${name}\` của chủ dự án làm: không có phiên orchestrator nào. Xem Agent Workpad trên issue, hoặc giao feature cho một agent bằng assign_agent.`,
+      ),
+      { status: 409, chat: name },
+    );
   // The agent that should receive commands for a feature.
   async function agentFor(number) {
     const issue = await github.request(`${github.base}/issues/${number}`);
     const assigned = assignedAgent(issue);
+    if (isChatAgent(assigned)) throw noSession(number, assigned);
     if (assigned && assigned in tokens) return assigned;
     if (assigned)
       throw Object.assign(
@@ -129,7 +147,10 @@ export function createBoard({
   };
   async function overview(fresh) {
     if (!cache || now() - cache.at > cacheMs || fresh)
-      cache = { at: now(), data: await loadBoard(github, labels) };
+      cache = {
+        at: now(),
+        data: await loadBoard(github, labels, { staleHours, now }),
+      };
     return {
       project,
       repo,
@@ -150,27 +171,93 @@ export function createBoard({
   }
   // A command for the feature's agent: a message, an answer, take over.
   async function command(issue, body) {
+    // A chat feature answers so before anything else.
+    const agent = await agentFor(issue);
     if (!relay)
       throw Object.assign(new Error("Board chưa nối orchestrator"), {
         status: 404,
       });
-    const agent = await agentFor(issue);
     relay.push(agent, { ...body, issue });
     return { ok: true, agent, online: relay.online(agent) };
   }
+  // The orchestrator that had a feature stops at once instead of on its next
+  // tracker pass. Without a label it was the unnamed agent's, if that one
+  // reported a session for it.
+  function stopOld(issue, before) {
+    const old =
+      before ??
+      (relay?.view(issue).state?.agent === "" && "" in tokens ? "" : null);
+    if (old !== null && old in tokens)
+      relay.push(old, { type: "unassigned", issue });
+  }
+  // A named orchestrator, or the owner's chat (`chat`, `chat-<suffix>`),
+  // which needs no token: every chat uses the MCP token.
   async function assign(issue, agent, actor) {
-    if (!named.length)
+    const chat = isChatAgent(agent);
+    if (!chat && !named.length)
       throw Object.assign(new Error("Board chưa có agent nào có tên"), {
         status: 404,
       });
-    if (!named.includes(agent))
+    if (!chat && !named.includes(agent))
       throw Object.assign(new Error("Không có agent này"), { status: 400 });
+    if (chat) refuseSymphony();
     const result = await assignAgent(github, issue, agent, actor);
-    // The old agent stops at once instead of on its next tracker pass.
-    if (result.before && result.before in tokens && result.changed)
-      relay.push(result.before, { type: "unassigned", issue });
+    if (result.changed) stopOld(issue, result.before);
     invalidate();
-    return { agent, ...result };
+    return { agent, chat, ...result };
+  }
+  // Symphony reads only the ready label, so it would run a chat's feature too.
+  function refuseSymphony() {
+    if (orchestrator === "symphony")
+      throw Object.assign(
+        new Error(
+          "Dự án chạy Symphony, vốn không đọc nhãn agent:, nên chat không giữ riêng được feature",
+        ),
+        { status: 409 },
+      );
+  }
+  // The owner's chat takes a ready feature and gets the prompt an agent
+  // would: the rendered WORKFLOW.md from the default branch.
+  async function claim(issue, suffix, actor) {
+    const agent = chatAgent(suffix);
+    refuseSymphony();
+    // Read the prompt first, so a missing WORKFLOW.md changes nothing.
+    const { prompt: template } = parseWorkflow(
+      await loadWorkflowText(github).catch((error) => {
+        if (error.status === 404)
+          throw Object.assign(
+            new Error("Không đọc được WORKFLOW.md trên nhánh chính"),
+            { status: 409 },
+          );
+        throw error;
+      }),
+    );
+    const result = await claimFeature(github, labels, issue, agent, actor);
+    if (result.changed) stopOld(issue, result.before);
+    invalidate();
+    return {
+      number: issue,
+      agent,
+      before: result.before,
+      stage: "running",
+      staleHours,
+      prompt: `${workflowTurn(template, result.issue)}${chatPromptSection(labels, issue, agent)}`,
+    };
+  }
+  // A feature's orchestrator session, or why a chat feature has none.
+  async function sessionFor(issue, after = 0) {
+    const agent = assignedAgent(
+      await github.request(`${github.base}/issues/${issue}`),
+    );
+    if (isChatAgent(agent))
+      return {
+        number: issue,
+        agent,
+        chat: true,
+        session: null,
+        message: noSession(issue, agent).message,
+      };
+    return relay?.view(issue, after) ?? null;
   }
   async function decide(issue, action, note, actor) {
     if (!["approve", "revise", "stop"].includes(action))
@@ -197,8 +284,12 @@ export function createBoard({
       overview,
       invalidate,
       session: (issue, after = 0) => relay?.view(issue, after) ?? null,
+      sessionFor,
+      staleHours,
+      now,
       command,
       assign,
+      claim,
       decide,
     },
   });
@@ -457,6 +548,11 @@ export function createBoard({
 // fingerprint (from board/token.mjs) keeps the token itself off the board.
 export function parseAgentTokens(text) {
   const tokens = parseTokens(text, "AGENT_TOKENS");
+  for (const name of Object.keys(tokens))
+    if (isChatAgent(name))
+      throw new Error(
+        `AGENT_TOKENS: "${name}" is reserved for the owner's chat, which needs no agent token`,
+      );
   checkDistinct({ AGENT_TOKENS: Object.values(tokens) });
   return tokens;
 }
@@ -489,6 +585,11 @@ export async function main(env = process.env) {
   if (!env.GITHUB_TOKEN?.trim()) throw new Error("Set GITHUB_TOKEN");
   const tokens = readTokens(env);
   const repo = manifest.tracker.repo;
+  const staleHours = Number(
+    manifest.runtime?.chat?.stale_hours ?? defaultStaleHours,
+  );
+  if (!(staleHours > 0))
+    throw new Error("project.yaml runtime.chat.stale_hours must be above 0");
   const handle = createBoard({
     project: manifest.project.name,
     repo,
@@ -499,6 +600,8 @@ export async function main(env = process.env) {
     github: createGitHub({ repo, token: env.GITHUB_TOKEN.trim() }),
     ...tokens,
     version: String(manifest.core?.version ?? "0"),
+    staleHours,
+    orchestrator: manifest.runtime?.orchestrator ?? "claude",
   });
   const port = Number(env.PORT ?? 8080);
   createServer(handle).listen(port, env.HOST ?? "0.0.0.0", () =>

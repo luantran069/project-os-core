@@ -36,6 +36,7 @@ idea → (approve G1) → plan → (approve G2) → ready → running (an agent 
 Typical loop: board_overview to see what waits; get_feature for one feature (it lists the decisions its column allows); for an idea, write the plan into the body with update_feature, then decide approve; for a review, read get_pull_request (diff, checks), leave a review_pull_request or decide revise with a note, or decide approve to merge.
 Every decision leaves a comment on the issue that names you as the owner's AI. Merging and stopping cannot be undone from here: check CI and the diff first.
 A feature needs an agent (assign_agent) before it runs. Talk to its Claude session with message_agent, read it with agent_session, and answer its questions or approvals with answer_agent.
+You can also build a ready feature yourself: claim_feature gives it to you as "chat" (or "chat-<suffix>", to tell several chats apart) and returns the WORKFLOW.md prompt an agent would get; follow it and keep the Agent Workpad current. No orchestrator runs a chat's feature, and the board warns when its workpad stands still too long.
 Write issue text, plans and notes in the language the project's issues already use.`;
 
 const fail = (message, status = 400) =>
@@ -114,8 +115,16 @@ function toolList(board) {
       },
       run: async (args) => {
         const n = issueNumber(args.number);
-        const details = await loadFeatureDetails(board.github, board.labels, n);
-        return { ...details, session: board.session(n)?.state ?? null };
+        const details = await loadFeatureDetails(
+          board.github,
+          board.labels,
+          n,
+          { staleHours: board.staleHours, now: board.now },
+        );
+        return {
+          ...details,
+          session: details.chat ? null : (board.session(n)?.state ?? null),
+        };
       },
     },
     {
@@ -293,7 +302,7 @@ revise needs a note. Every decision leaves a comment on the issue.`,
       name: "assign_agent",
       title: "Give a feature to an agent",
       description:
-        "Gives the feature to a named Claude orchestrator (board_overview lists them and whether they are online). It replaces any other agent: the old one stops at once and the new one starts a fresh session from the issue and its workpad.",
+        'Gives the feature to a named Claude orchestrator (board_overview lists them and whether they are online), or to the owner\'s chat: "chat" or "chat-<suffix>" (lowercase letters, digits, dashes), which needs no token. It replaces any other agent: the old one stops at once and the new holder continues from the issue and its workpad. To start a ready feature in this chat, use claim_feature instead.',
       annotations: write(true),
       inputSchema: {
         type: "object",
@@ -311,10 +320,36 @@ revise needs a note. Every decision leaves a comment on the issue.`,
         ),
     },
     {
+      name: "claim_feature",
+      title: "Build a ready feature in this chat",
+      description:
+        'Takes a feature in the ready column (G2 approved) for this chat to build: sets agent:chat (or agent:chat-<suffix>) and in-progress, so the feature runs and no orchestrator touches it, stops the orchestrator that had it, and leaves a signed comment. Returns the rendered WORKFLOW.md prompt an agent would get, followed by a section for the owner\'s chat: follow both (task worktree ai/<issue>, the "## Agent Workpad" comment, the checks in AGENTS.md, a pull request that starts with "Closes #<issue>", green CI, the move to review), and unlike an agent, review the diff and merge with decide approve. Name your session and machine in the workpad. The board warns when the workpad has not changed for runtime.chat.stale_hours hours (24 by default).',
+      annotations: write(true),
+      inputSchema: {
+        type: "object",
+        properties: {
+          number: feature,
+          suffix: {
+            type: "string",
+            maxLength: 26,
+            description:
+              'Optional: names this chat, as in "chat-macbook". Lowercase letters, digits and dashes.',
+          },
+        },
+        required: ["number"],
+      },
+      run: async (args, { actor }) =>
+        board.claim(
+          issueNumber(args.number),
+          text(args.suffix, "suffix", 26)?.trim() || "",
+          actor,
+        ),
+    },
+    {
       name: "agent_session",
       title: "Read an agent's session",
       description:
-        "The live Claude session of a feature: its status, cost, the questions and approvals it waits on (with their ids, for answer_agent), its workspace and session id (to resume it with claude --resume in a terminal) and the latest events. Pass after = the previous cursor to get only new events.",
+        "The live Claude session of a feature: its status, cost, the questions and approvals it waits on (with their ids, for answer_agent), its workspace and session id (to resume it with claude --resume in a terminal) and the latest events. Pass after = the previous cursor to get only new events. A feature the owner's chat holds has no orchestrator session: the answer says so.",
       annotations: read,
       inputSchema: {
         type: "object",
@@ -325,7 +360,7 @@ revise needs a note. Every decision leaves a comment on the issue.`,
         required: ["number"],
       },
       run: async (args) => {
-        const view = board.session(
+        const view = await board.sessionFor(
           issueNumber(args.number),
           Number(args.after) || 0,
         );
@@ -419,10 +454,14 @@ revise needs a note. Every decision leaves a comment on the issue.`,
 // The board by column, without bodies: get_feature has those.
 export function compact(data) {
   const sessions = data.agent?.features ?? {};
+  const warnings = data.features
+    .filter((f) => f.chat?.warning)
+    .map((f) => `#${f.number}: ${f.chat.warning}`);
   return {
     project: data.project,
     repo: data.repo,
     loadedAt: data.loadedAt,
+    ...(warnings.length ? { warnings } : {}),
     agents: data.agent
       ? {
           named: data.agent.agents,
@@ -440,7 +479,8 @@ export function compact(data) {
           title: f.title,
           priority: f.priority,
           agent: f.agent,
-          session: sessions[f.number] ?? null,
+          chat: f.chat ?? null,
+          session: f.chat ? null : (sessions[f.number] ?? null),
           comments: f.comments,
           updated: f.updated,
           summary: f.body.replace(/\s+/g, " ").trim().slice(0, 200),
