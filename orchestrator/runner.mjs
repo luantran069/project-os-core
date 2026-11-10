@@ -55,6 +55,9 @@ export function createRunner({
   approvalTimeoutMs = 30 * 60_000,
   model,
   env,
+  // "reviewer" runs the read-only policy; onResult hears how each turn ended.
+  role = "coder",
+  onResult,
 }) {
   const queues = new Map(); // issue -> [{ text, workspace }]
   const active = new Map(); // issue -> AbortController
@@ -98,7 +101,7 @@ export function createRunner({
   }
 
   function gate(issue, workspace, toolName, input, signal, onAway) {
-    const verdict = decide(toolName, input, { workspace });
+    const verdict = decide(toolName, input, { workspace, role });
     if (verdict.behavior === "allow")
       return Promise.resolve({ behavior: "allow", updatedInput: input });
     if (verdict.behavior === "deny") return Promise.resolve(verdict);
@@ -235,6 +238,23 @@ export function createRunner({
         text: "The turn stopped with an error; see the orchestrator log.",
       });
     publish(issue, { kind: "status", status: store.get(issue).status });
+    // A turn stopped from outside (shutdown, take-over) has no result to act on.
+    if (onResult && !abort.signal.aborted)
+      await Promise.resolve(
+        onResult(issue, {
+          ok: Boolean(ok),
+          text: String(result?.result ?? ""),
+          costUsd: result?.total_cost_usd ?? 0,
+        }),
+      ).catch((error) =>
+        publish(issue, {
+          kind: "error",
+          text: `Could not act on the turn's result: ${error.message}`.slice(
+            0,
+            500,
+          ),
+        }),
+      );
   }
 
   // The owner continues by hand: stop the running turn, refuse what it waits on,

@@ -108,19 +108,23 @@ the PR. Push the branch and create or update the PR with the problem, resulting
 behaviour, checks and limitations; its body starts with `Closes #<issue number>`
 so the board links the PR to the feature. Record the current head SHA.
 
-If a review label is present, or a required human review is outstanding, update
-the workpad, remove `symphony-ready` and `symphony-in-progress`, and add
-`symphony-human-review`. Do not merge.
+The coding agent never merges. Update the workpad, remove `symphony-ready` and
+`symphony-in-progress`, and hand off as `gates.merge` in `project.yaml` says:
 
-TODO(owner): state whether the owner authorizes the agent to merge verified PRs
-without separate approval. Until this is filled in, hand off with
-`symphony-human-review`.
+- `owner` (the default): add `symphony-human-review`. The owner merges from the
+  board.
+- `ai`: if the issue carries `symphony-human-review` or `symphony-pilot-review`,
+  hand off as for `owner`. Otherwise add `symphony-ai-review`. A separate AI
+  reviewer session checks the PR against this issue and either merges it or sends
+  it back with `symphony-ready` and a "Yêu cầu sửa PR" comment.
 
-When merging is authorized, re-read the issue, PR head, verification, required
-reviews and unresolved feedback, then merge with the expected head SHA
-(`gh pr merge --squash --match-head-commit <sha>`). Never use `--admin` or
-force-push. Confirm GitHub reports the merge, then close the issue and remove
-`symphony-in-progress`.
+On rework, read the latest review feedback in the issue comments and on the PR,
+address each item, say in the workpad how, and hand off again the same way.
+
+If the owner explicitly approves a merge from this session, merge only the head
+that was reviewed (`gh pr merge --squash --match-head-commit <sha>`). Never use
+`--admin` or force-push. Confirm GitHub reports the merge, then close the issue
+and remove `symphony-in-progress`.
 This workflow does not authorize deployment beyond the issue's scope.
 
 Final output: changes, commands and results, worktree and branch, PR URL, merge

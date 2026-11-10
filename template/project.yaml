@@ -32,6 +32,7 @@ labels:
   in_progress: symphony-in-progress
   human_review: symphony-human-review
   pilot_review: symphony-pilot-review
+  ai_review: symphony-ai-review
 
 # Autonomy: L0 suggest, L1 ask first, L2 act then report, L3 automatic.
 modules:
@@ -44,6 +45,24 @@ modules:
 gates:
   release: required # required | auto
   public_content: required # always required
+  merge: owner # owner | ai: who decides a pull request in review
+
+# Used when gates.merge is ai. A PR touching owner_paths always goes to the owner.
+review:
+  max_rounds: 2 # times the AI reviewer may send a PR back before the owner decides
+  owner_paths:
+    - ".github/**"
+    - ".project-os/**"
+    - "project.yaml"
+    - "WORKFLOW.md"
+    - "**/migrations/**"
+    - "**/package.json"
+    - "**/package-lock.json"
+    - "**/go.mod"
+    - "**/go.sum"
+    - "**/*.gradle*"
+    - "**/Dockerfile"
+    - ".env*"
 
 budget:
   monthly_usd: null # set before raising concurrency

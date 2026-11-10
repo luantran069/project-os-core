@@ -40,6 +40,8 @@ export function createController({
   workspaces,
   workflowPrompt,
   agent = null,
+  // With gates.merge: ai, the reviewer takes features handed off for AI review.
+  reviewer = null,
   log = console.error,
 }) {
   const mine = (issue) => assignedAgent(issue) === (agent || null);
@@ -97,6 +99,7 @@ export function createController({
         log(`Could not start #${issue.number}: ${error.message}`);
       }
     }
+    if (reviewer) await reviewer.tick(open.filter(mine));
   }
 
   async function message(number, text) {

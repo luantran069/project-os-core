@@ -314,6 +314,19 @@ function checkTracker(config, project, labels) {
         labels[key],
         `project.yaml labels.${key} is required for GitHub`,
       );
+    // gates.merge: ai hands features to the AI reviewer with labels.ai_review.
+    if (project.gates?.merge === "ai") {
+      assert.ok(
+        labels.ai_review,
+        "project.yaml labels.ai_review is required when gates.merge is ai",
+      );
+      return [
+        labels.human_review,
+        labels.ai_review,
+        labels.in_progress,
+        "Closes #",
+      ];
+    }
     return [labels.human_review, labels.in_progress, "Closes #"];
   }
   assert.equal(kind, "jira", `Unsupported tracker kind: ${kind}`);
