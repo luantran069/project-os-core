@@ -4,9 +4,9 @@
 //
 // Streamable HTTP, stateless: each POST /mcp carries one JSON-RPC message (or a
 // batch) and gets a JSON answer, no SSE stream and no session id. The caller
-// needs BOARD_MCP_TOKEN as a bearer token; the owner's cookie and the agents'
-// tokens never work here, and this token never works anywhere else.
-import { timingSafeEqual } from "node:crypto";
+// needs one of the MCP tokens (BOARD_MCP_TOKENS, or the unnamed
+// BOARD_MCP_TOKEN) as a bearer token; the owner's cookie and the agents'
+// tokens never work here, and these tokens never work anywhere else.
 import {
   commentFeature,
   createIdea,
@@ -18,6 +18,11 @@ import {
   reviewPull,
   updateFeature,
 } from "./github.mjs";
+import { callerOf } from "./tokens.mjs";
+
+// Who a decision comment names: the AI of the machine whose token was used.
+export const actorFor = (name) =>
+  name ? `AI của \`${name}\`, qua MCP` : mcpActor;
 
 export const protocolVersions = [
   "2025-11-25",
@@ -214,17 +219,16 @@ revise needs a note. Every decision leaves a comment on the issue.`,
         },
         required: ["number", "action"],
       },
-      run: async (args) => {
-        const result = await board.decide(
+      run: async (args, { actor }) =>
+        board.decide(
           issueNumber(args.number),
           need(
             oneOf(args.action, "action", ["approve", "revise", "stop"]),
             "action",
           ),
           text(args.note, "note", 5000) ?? "",
-        );
-        return result;
-      },
+          actor,
+        ),
     },
     {
       name: "get_pull_request",
@@ -299,10 +303,11 @@ revise needs a note. Every decision leaves a comment on the issue.`,
         },
         required: ["number", "agent"],
       },
-      run: async (args) =>
+      run: async (args, { actor }) =>
         board.assign(
           issueNumber(args.number),
           text(args.agent, "agent", 31, { required: true }),
+          actor,
         ),
     },
     {
@@ -445,12 +450,6 @@ export function compact(data) {
   };
 }
 
-const same = (a, b) => {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && timingSafeEqual(x, y);
-};
-
 const rpcError = (id, code, message) => ({
   jsonrpc: "2.0",
   id: id ?? null,
@@ -458,17 +457,19 @@ const rpcError = (id, code, message) => ({
 });
 
 // Returns handle(request, response, readJson, send), or null without a token.
-export function createMcp({ token, version = "0", board }) {
-  if (!token) return null;
+// `tokens` maps a machine's name to its token or fingerprint; "" is unnamed.
+export function createMcp({ tokens = {}, version = "0", board }) {
+  if (!Object.keys(tokens).length) return null;
   const tools = toolList(board);
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   const listed = tools.map(({ run, ...tool }) => tool);
 
-  async function call(name, args) {
+  async function call(name, args, context) {
     const tool = byName.get(name);
     try {
       const result = await tool.run(
         args && typeof args === "object" ? args : {},
+        context,
       );
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -481,7 +482,7 @@ export function createMcp({ token, version = "0", board }) {
     }
   }
 
-  async function answer(message) {
+  async function answer(message, context) {
     if (!message || typeof message !== "object" || message.jsonrpc !== "2.0")
       return rpcError(null, -32600, "Invalid request");
     const { id, method, params = {} } = message;
@@ -511,7 +512,7 @@ export function createMcp({ token, version = "0", board }) {
       case "tools/call":
         if (!byName.has(params.name))
           return rpcError(id, -32602, `Unknown tool: ${params.name}`);
-        return ok(await call(params.name, params.arguments));
+        return ok(await call(params.name, params.arguments, context));
       default:
         return rpcError(id, -32601, `Method not found: ${method}`);
     }
@@ -522,7 +523,8 @@ export function createMcp({ token, version = "0", board }) {
     // Origin.
     if (request.headers.origin)
       return send(response, 403, { error: "Origin not allowed" });
-    if (!same(request.headers.authorization ?? "", `Bearer ${token}`))
+    const caller = callerOf(tokens, request.headers.authorization);
+    if (caller === null)
       return send(
         response,
         401,
@@ -541,8 +543,11 @@ export function createMcp({ token, version = "0", board }) {
       return send(response, 400, rpcError(null, -32700, "Parse error"));
     }
     const batch = Array.isArray(body);
+    const context = { caller, actor: actorFor(caller) };
     const replies = (
-      await Promise.all((batch ? body : [body]).map(answer))
+      await Promise.all(
+        (batch ? body : [body]).map((message) => answer(message, context)),
+      )
     ).filter(Boolean);
     if (!replies.length) {
       response.writeHead(202).end();

@@ -84,12 +84,14 @@ To let more than one orchestrator work on the same board (the owner's Mac, a fri
 Mac, Dokploy), give each its own name and token:
 
 ```text
-AGENT_TOKENS=luan-mac=<32+ characters>,friend-mac=<32+ characters>
+AGENT_TOKENS=luan-mac=sha256:<64 hex>,friend-mac=sha256:<64 hex>
 ```
 
 Names use `a-z`, `0-9` and dashes. Each orchestrator sets the matching `AGENT_NAME` and
 `AGENT_TOKEN`. The board knows who is calling from the token alone, so one agent cannot
 read or answer for another, and one token can be revoked without touching the rest.
+Each value is either the token itself or, better, its fingerprint (see "Tokens that
+stay on their machine" below).
 
 The owner picks the agent in the "Phiên Claude" panel. The board then sets the issue's
 `agent:<name>` label (removing any other `agent:` label) and comments on the issue.
@@ -110,16 +112,27 @@ With `BOARD_MCP_TOKEN` set, the board also answers the Model Context Protocol at
 `https://<board domain>/mcp`, so the owner's AI can do everything the owner does on the
 page. Without it `/mcp` returns 404.
 
+Give each machine whose AI runs the board its own token, named like an agent:
+
 ```text
-BOARD_MCP_TOKEN=<32+ random characters, not any agent's token>
+BOARD_MCP_TOKENS=luan-mac=sha256:<64 hex>,friend-mac=sha256:<64 hex>
 ```
 
-Add it to Claude Code (once per machine; `--scope user` makes it available in every
-project):
+On that machine, from the project root, one command makes the token, adds the board to
+Claude Code with it (`--scope user`: every project on the machine) and prints the line
+for `BOARD_MCP_TOKENS`:
+
+```bash
+node .project-os/board/token.mjs mcp luan-mac --board https://<board domain>
+```
+
+Decisions then name the machine: "AI của `luan-mac`, qua MCP". A single unnamed
+`BOARD_MCP_TOKEN` still works as in 0.8.0; its decisions say "AI của chủ dự án, qua
+MCP". No MCP token may equal an agent token. To add the board by hand instead:
 
 ```bash
 claude mcp add --transport http --scope user board https://<board domain>/mcp \
-  --header "Authorization: Bearer <BOARD_MCP_TOKEN>"
+  --header "Authorization: Bearer <token>"
 ```
 
 | Tool                  | What it does                                                                                     |
@@ -152,6 +165,36 @@ JSON. The token is accepted only there, the owner's cookie and the agents' token
 and a request with an `Origin` header (a browser page) is refused. Rotate the token by
 changing the variable and redeploying.
 
+## Tokens that stay on their machine
+
+Every token the board checks (`AGENT_TOKEN`, `AGENT_TOKENS`, `BOARD_MCP_TOKEN`,
+`BOARD_MCP_TOKENS`) can be given as its fingerprint, `sha256:` and 64 hex characters,
+instead of the token. The board hashes the bearer token each call brings and compares
+fingerprints, so it never holds the token. Someone who reads the board's environment in
+Dokploy, or its logs, sees only fingerprints and cannot act as a machine. The token
+itself lives only where it is used: the orchestrator's `.env`, or the machine's Claude
+Code settings.
+
+`token.mjs` makes a token on the machine that will use it and prints only the line the
+board needs:
+
+| Command                                                               | On the machine                                    | Line for the board |
+| --------------------------------------------------------------------- | ------------------------------------------------- | ------------------ |
+| `node .project-os/board/token.mjs agent <name>`                       | Writes `AGENT_NAME` and `AGENT_TOKEN` into `.env` | `AGENT_TOKENS`     |
+| `node .project-os/board/token.mjs mcp <name> --board https://<board>` | Runs `claude mcp add` with the token              | `BOARD_MCP_TOKENS` |
+| `node .project-os/board/token.mjs hash < token.txt`                   | Prints the fingerprint of a token you already use | Replace the token  |
+
+`agent` refuses to replace an existing `AGENT_TOKEN` without `--force`, and keeps `.env`
+readable by its owner only. `mcp` takes `--server <name>` (default `<project>-board`) and
+`--scope user|local`; it refuses `project`, which would put the token in the repository's
+`.mcp.json`. Add the printed line to the board's variable, comma-separated with the
+others, and redeploy the board. To move an existing machine over, run `hash` on its
+token and replace the token with the fingerprint; the machine changes nothing.
+
+A fingerprint protects the token from whoever sees the board's settings, not from
+whoever has the machine. `GITHUB_TOKEN` and `BOARD_PASSWORD` stay as they are: the board
+needs the first in full to call GitHub, and the password is the owner's own.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues
@@ -166,7 +209,8 @@ changing the variable and redeploying.
    - `BOARD_PASSWORD`: login password, at least 12 characters.
    - `BOARD_SESSION_SECRET`: a long random string; keeps sessions valid across
      restarts. Without it you must log in again after every deploy.
-   - `BOARD_MCP_TOKEN` (optional): turns on `/mcp` for the owner's AI, see above.
+   - `AGENT_TOKENS` (optional): the agents' names and token fingerprints, see above.
+   - `BOARD_MCP_TOKENS` (optional): turns on `/mcp` for each machine's AI, see above.
 4. Attach a domain with HTTPS, port 8080. The session cookie is sent over HTTPS only.
 5. Open the domain and log in. The board refreshes every minute; the ↻ button
    reloads at once.

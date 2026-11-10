@@ -16,11 +16,11 @@ import {
   loadImage,
   loadSession,
   maxImageBytes,
-  mcpActor,
   uploadImage,
 } from "./github.mjs";
 import { createMcp } from "./mcp.mjs";
-import { agentName, createRelay } from "./relay.mjs";
+import { createRelay } from "./relay.mjs";
+import { callerOf, checkDistinct, checkToken, parseTokens } from "./tokens.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
 const cookieName = "board_session";
@@ -97,6 +97,7 @@ export function createBoard({
   agentToken = "",
   agentTokens = {},
   mcpToken = "",
+  mcpTokens = {},
   version = "0",
 }) {
   let cache = null;
@@ -106,12 +107,7 @@ export function createBoard({
   const named = Object.keys(tokens).filter(Boolean).sort();
   // Set when the board is linked to at least one Claude orchestrator.
   const relay = Object.keys(tokens).length ? createRelay({ now }) : null;
-  const caller = (header = "") => {
-    let found = null;
-    for (const [name, token] of Object.entries(tokens))
-      if (same(header, `Bearer ${token}`)) found = name;
-    return found;
-  };
+  const caller = (header = "") => callerOf(tokens, header);
   // The agent that should receive commands for a feature.
   async function agentFor(number) {
     const issue = await github.request(`${github.base}/issues/${number}`);
@@ -191,7 +187,7 @@ export function createBoard({
     return result;
   }
   const mcp = createMcp({
-    token: mcpToken,
+    tokens: { ...mcpTokens, ...(mcpToken ? { "": mcpToken } : {}) },
     version,
     board: {
       github,
@@ -202,8 +198,8 @@ export function createBoard({
       invalidate,
       session: (issue, after = 0) => relay?.view(issue, after) ?? null,
       command,
-      assign: (issue, agent) => assign(issue, agent, mcpActor),
-      decide: (issue, action, note) => decide(issue, action, note, mcpActor),
+      assign,
+      decide,
     },
   });
   const failures = { count: 0, until: 0 };
@@ -456,43 +452,31 @@ export function createBoard({
   };
 }
 
-// AGENT_TOKENS="luan-mac=<token>,friend-mac=<token>": one token per agent, so
-// each can be told apart and revoked on its own.
+// AGENT_TOKENS="luan-mac=<token>,friend-mac=sha256:<hex>": one token per
+// agent, so each can be told apart and revoked on its own. A sha256:
+// fingerprint (from board/token.mjs) keeps the token itself off the board.
 export function parseAgentTokens(text) {
-  const tokens = {};
-  for (const pair of String(text)
-    .split(/[,\n]/)
-    .map((p) => p.trim())
-    .filter(Boolean)) {
-    const at = pair.indexOf("=");
-    const name = pair.slice(0, at).trim();
-    const token = pair.slice(at + 1).trim();
-    if (at < 1 || !agentName.test(name))
-      throw new Error(
-        `AGENT_TOKENS: "${name || pair.slice(0, 20)}" is not a valid agent name (a-z, 0-9, -)`,
-      );
-    if (token.length < 32)
-      throw new Error(
-        `AGENT_TOKENS: the token for ${name} needs 32+ characters`,
-      );
-    if (name in tokens) throw new Error(`AGENT_TOKENS: ${name} appears twice`);
-    if (Object.values(tokens).includes(token))
-      throw new Error("AGENT_TOKENS: each agent needs its own token");
-    tokens[name] = token;
-  }
+  const tokens = parseTokens(text, "AGENT_TOKENS");
+  checkDistinct({ AGENT_TOKENS: Object.values(tokens) });
   return tokens;
 }
 
-// BOARD_MCP_TOKEN lets the owner's AI run the board, so it is long and never
-// one of the agents' tokens.
-export function checkMcpToken(token = "", agentTokens = []) {
-  const value = String(token ?? "").trim();
-  if (!value) return "";
-  if (value.length < 32)
-    throw new Error("BOARD_MCP_TOKEN must be at least 32 characters");
-  if (agentTokens.includes(value))
-    throw new Error("BOARD_MCP_TOKEN must differ from every agent token");
-  return value;
+// Every token setting of the board, checked: each value a token of 32+
+// characters or its fingerprint, and no two alike across agents and AIs.
+export function readTokens(env = {}) {
+  const one = (name) => (env[name]?.trim() ? checkToken(env[name], name) : "");
+  const agentToken = one("AGENT_TOKEN");
+  const agentTokens = parseAgentTokens(env.AGENT_TOKENS);
+  const mcpToken = one("BOARD_MCP_TOKEN");
+  const mcpTokens = parseTokens(env.BOARD_MCP_TOKENS, "BOARD_MCP_TOKENS");
+  checkDistinct({
+    "AGENT_TOKEN and AGENT_TOKENS": [agentToken, ...Object.values(agentTokens)],
+    "BOARD_MCP_TOKEN and BOARD_MCP_TOKENS": [
+      mcpToken,
+      ...Object.values(mcpTokens),
+    ],
+  });
+  return { agentToken, agentTokens, mcpToken, mcpTokens };
 }
 
 export async function main(env = process.env) {
@@ -503,14 +487,7 @@ export async function main(env = process.env) {
   if (password.length < 12)
     throw new Error("Set BOARD_PASSWORD (at least 12 characters)");
   if (!env.GITHUB_TOKEN?.trim()) throw new Error("Set GITHUB_TOKEN");
-  const agentToken = env.AGENT_TOKEN ?? "";
-  if (agentToken && agentToken.length < 32)
-    throw new Error("AGENT_TOKEN must be at least 32 characters");
-  const agentTokens = parseAgentTokens(env.AGENT_TOKENS ?? "");
-  const mcpToken = checkMcpToken(env.BOARD_MCP_TOKEN, [
-    agentToken,
-    ...Object.values(agentTokens),
-  ]);
+  const tokens = readTokens(env);
   const repo = manifest.tracker.repo;
   const handle = createBoard({
     project: manifest.project.name,
@@ -520,9 +497,7 @@ export async function main(env = process.env) {
     secret: env.BOARD_SESSION_SECRET || randomBytes(32),
     secure: env.BOARD_INSECURE_COOKIE !== "1",
     github: createGitHub({ repo, token: env.GITHUB_TOKEN.trim() }),
-    agentToken,
-    agentTokens,
-    mcpToken,
+    ...tokens,
     version: String(manifest.core?.version ?? "0"),
   });
   const port = Number(env.PORT ?? 8080);
