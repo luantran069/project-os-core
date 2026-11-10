@@ -67,7 +67,7 @@ Environment:
 
 | Variable                  | Where      | Value                                                                  |
 | ------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `AGENT_TOKEN`             | Both sides | The same random string, at least 32 characters                         |
+| `AGENT_TOKEN`             | Both sides | 32+ random characters here; the board may hold only its fingerprint    |
 | `AGENT_NAME`              | Orchestr.  | This agent's name when several share a board; see below                |
 | `BOARD_URL`               | Orchestr.  | The board's address; https unless local or an internal hostname        |
 | `GITHUB_TOKEN`            | Orchestr.  | A token for the agent's `gh`: issues, PRs and contents read/write      |
@@ -81,8 +81,12 @@ board's own secrets.
 ## On the Mac
 
 1. Sign in once with `claude` in a terminal. The orchestrator uses that login.
-2. Add `AGENT_TOKEN` to the board (Dokploy env, or the local command) and redeploy it.
-3. In the project, put `AGENT_TOKEN`, `BOARD_URL` and `GITHUB_TOKEN` in `.env`, then run
+2. In the project, run `node .project-os/board/token.mjs agent <name>`. It writes
+   `AGENT_NAME` and a new `AGENT_TOKEN` into `.env` and prints a `<name>=sha256:...`
+   line: add it to the board's `AGENT_TOKENS` (Dokploy env) and redeploy the board. The
+   token never leaves the Mac (see "Tokens that stay on their machine" in
+   [the board docs](board.md)).
+3. Put `BOARD_URL` and `GITHUB_TOKEN` in `.env` as well, then run
    `npm run orchestrator:start` and leave it running.
 4. Features live in `.orchestrator/workspaces/<issue>`. To continue one by hand, press
    "Ngưng chạy, tự tiếp quản" and run the command it shows:

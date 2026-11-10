@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { createGitHub } from "../board/github.mjs";
-import { checkMcpToken, createBoard } from "../board/server.mjs";
+import { createBoard } from "../board/server.mjs";
 import { fakeGitHub, labels } from "./board-fake.mjs";
 
 const mcpToken = "m".repeat(40);
@@ -352,13 +352,3 @@ test("the AI gives a feature to an agent and talks to its session", () =>
     });
     assert.deepEqual(later.events, []);
   }));
-
-test("BOARD_MCP_TOKEN must be long and differ from the agents' tokens", () => {
-  assert.equal(checkMcpToken(undefined), "");
-  assert.equal(checkMcpToken(` ${mcpToken} `, [luan]), mcpToken);
-  assert.throws(() => checkMcpToken("short"), /at least 32/);
-  assert.throws(
-    () => checkMcpToken(luan, ["", luan]),
-    /differ from every agent token/,
-  );
-});

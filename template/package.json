@@ -12,7 +12,8 @@
     "symphony:start": "node --env-file-if-exists=.env .project-os/symphony/start.mjs",
     "symphony:service": "node .project-os/symphony/service.mjs",
     "symphony:migrate-jira": "node --env-file-if-exists=.env .project-os/symphony/migrate-jira.mjs",
-    "orchestrator:start": "node --env-file-if-exists=.env .project-os/orchestrator/start.mjs"
+    "orchestrator:start": "node --env-file-if-exists=.env .project-os/orchestrator/start.mjs",
+    "board:token": "node .project-os/board/token.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.1"

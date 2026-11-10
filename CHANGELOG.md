@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 (2026-11-10)
+
+- The board can hold a token's fingerprint (`sha256:<64 hex>`) instead of the token, in
+  `AGENT_TOKEN`, `AGENT_TOKENS`, `BOARD_MCP_TOKEN` and `BOARD_MCP_TOKENS`. It hashes the
+  bearer token of each call and compares fingerprints, so a personal machine's token stays
+  on that machine and whoever reads the board's settings cannot use it. Plain tokens work
+  as before. See "Tokens that stay on their machine" in `docs/board.md` and ADR-0004.
+- `BOARD_MCP_TOKENS=name=value,...` gives each machine's AI its own MCP token, revocable
+  on its own; its decisions are signed "AI của `<name>`, qua MCP". The single
+  `BOARD_MCP_TOKEN` still works. No MCP token may equal an agent token, compared by
+  fingerprint.
+- `node .project-os/board/token.mjs` makes a token on the machine that uses it. Its
+  `agent` command writes `AGENT_NAME` and `AGENT_TOKEN` into `.env`; `mcp` adds the
+  board to Claude Code; `hash` prints the fingerprint of a token already in use. Each
+  prints only the fingerprint line for the board. Projects get an npm script,
+  `board:token`.
+- Redeploy the board after syncing. Orchestrators need no change.
+
 ## 0.8.0 (2026-11-10)
 
 - The board is an MCP server at `/mcp` (Streamable HTTP), so the owner's AI can run it:
