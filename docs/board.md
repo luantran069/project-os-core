@@ -9,15 +9,15 @@ source; the board has no database of its own. The code lives in
 
 ## What the board shows
 
-| Column    | Open issues with label             | Buttons                                         |
-| --------- | ---------------------------------- | ----------------------------------------------- |
-| Idea      | `idea` (or no stage label yet)     | Approve G1 → Plan, Request changes, Stop        |
-| Plan      | `plan`                             | Approve G2 → add `ready`, Request changes, Stop |
-| Ready     | `ready`                            | Pause                                           |
-| Running   | `ready` + `in_progress`            | Pause agent                                     |
-| In review | `human_review` or `pilot_review`   | Approve and merge PR, Request changes, Stop     |
-| Blocked   | `blocked`                          | Unblock, Unblock with note, Stop                |
-| Done      | closed issues (the 20 most recent) | —                                               |
+| Column    | Open issues with label                        | Buttons                                         |
+| --------- | --------------------------------------------- | ----------------------------------------------- |
+| Idea      | `idea` (or no stage label yet)                | Approve G1 → Plan, Request changes, Stop        |
+| Plan      | `plan`                                        | Approve G2 → add `ready`, Request changes, Stop |
+| Ready     | `ready`                                       | Pause                                           |
+| Running   | `ready` + `in_progress`                       | Pause agent                                     |
+| In review | `human_review`, `pilot_review` or `ai_review` | Approve and merge PR, Request changes, Stop     |
+| Blocked   | `blocked`                                     | Unblock, Unblock with note, Stop                |
+| Done      | closed issues (the 20 most recent)            | —                                               |
 
 Each card shows its priority (labels `priority-now`, `priority-next`,
 `priority-later`), the gate it waits on, the linked PR (a PR with `Closes #N` in

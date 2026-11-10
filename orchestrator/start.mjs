@@ -9,6 +9,7 @@ import {
 import { createController } from "./controller.mjs";
 import { runtimeNotes } from "./prompt.mjs";
 import { createRelay } from "./relay.mjs";
+import { createReviewer, reviewerNotes, reviewSettings } from "./review.mjs";
 import { createRunner } from "./runner.mjs";
 import { createStore } from "./store.mjs";
 import { createWorkspaces } from "./workspace.mjs";
@@ -71,6 +72,12 @@ export function configure(manifest, env) {
   const agent = env.AGENT_NAME?.trim() || "";
   if (agent && !agentNamePattern.test(agent))
     errors.push("AGENT_NAME may use a-z, 0-9 and dashes, up to 31 characters");
+  let review = null;
+  try {
+    review = reviewSettings(manifest);
+  } catch (error) {
+    errors.push(error.message);
+  }
   if (errors.length) throw new Error(errors.join("\n"));
   const claude = runtime.claude ?? {};
   return {
@@ -83,10 +90,65 @@ export function configure(manifest, env) {
     model: claude.model ?? undefined,
     approvalTimeoutMs: Number(claude.approval_timeout_minutes ?? 30) * 60_000,
     pollMs: Number(claude.poll_seconds ?? 30) * 1000,
+    review,
     agentEnv: Object.fromEntries(
       Object.entries(env).filter(([key]) => !privateKeys.includes(key)),
     ),
   };
+}
+
+// The AI reviewer has its own sessions, state and workspaces, so a review never
+// resumes the coder's session. Its live log stays in the orchestrator's output;
+// its decisions are comments on the issue.
+async function startReviewer({ sdk, settings, stateDir, gh, hooks }) {
+  const { labels } = settings;
+  try {
+    await gh.request(`${gh.base}/labels`, {
+      method: "POST",
+      body: {
+        name: labels.ai_review,
+        color: "5319E7",
+        description: "Waiting for the AI reviewer (gates.merge: ai)",
+      },
+    });
+  } catch (error) {
+    if (error.status !== 422)
+      console.error(
+        `Could not create the ${labels.ai_review} label: ${error.message}`,
+      );
+  }
+  let reviewer = null;
+  const store = createStore(join(stateDir, "reviews"));
+  const runner = createRunner({
+    query: sdk.query,
+    store,
+    emit: (issue, event) => {
+      if (event.kind === "error")
+        console.error(`AI review of #${issue}: ${event.text}`);
+    },
+    systemAppend: reviewerNotes(settings),
+    maxConcurrent: 1,
+    maxTurns: settings.maxTurns,
+    approvalTimeoutMs: settings.approvalTimeoutMs,
+    model: settings.model,
+    env: settings.agentEnv,
+    role: "reviewer",
+    onResult: (issue, result) => reviewer.onResult(issue, result),
+  });
+  reviewer = createReviewer({
+    gh,
+    labels,
+    settings: settings.review,
+    runner,
+    store,
+    workspaces: createWorkspaces({
+      root: join(stateDir, "review-workspaces"),
+      hooks,
+    }),
+    repo: settings.repo,
+    agent: settings.agent,
+  });
+  return reviewer;
 }
 
 export async function main(env = process.env) {
@@ -126,6 +188,15 @@ export async function main(env = process.env) {
     repo: settings.repo,
     token: env.GITHUB_TOKEN.trim(),
   });
+  const reviewer = settings.review.enabled
+    ? await startReviewer({
+        sdk,
+        settings,
+        stateDir,
+        gh,
+        hooks: workflow.config?.hooks,
+      })
+    : null;
   const controller = createController({
     gh,
     labels: settings.labels,
@@ -137,6 +208,7 @@ export async function main(env = process.env) {
     }),
     workflowPrompt: workflow.prompt,
     agent: settings.agent,
+    reviewer,
   });
 
   // Tell the board what exists, then keep telling it so it knows we are alive.
@@ -168,7 +240,7 @@ export async function main(env = process.env) {
       setTimeout(() => process.exit(0), 1000).unref();
     });
   console.log(
-    `Claude orchestrator${settings.agent ? ` "${settings.agent}"` : ""} for ${settings.repo} on ${settings.host}, board ${new URL(env.BOARD_URL).origin}`,
+    `Claude orchestrator${settings.agent ? ` "${settings.agent}"` : ""} for ${settings.repo} on ${settings.host}, board ${new URL(env.BOARD_URL).origin}${reviewer ? ", AI reviewer on (gates.merge: ai)" : ""}`,
   );
   try {
     await relay.listen((command) => controller.handle(command));

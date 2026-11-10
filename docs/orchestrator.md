@@ -131,6 +131,40 @@ Each orchestrator that shares a board sets `AGENT_NAME` (for example `luan-mac`,
 - Each agent needs its own GitHub token and Claude login, and its own copy of the
   repository's access (the SSH key or deploy key for the clone hook).
 
+## AI reviewer
+
+With `gates.merge: ai` in `project.yaml`, the orchestrator also reviews. Why and how it
+decides is in [ADR-0005](decisions/ADR-0005-ai-reviewer-merges.md).
+
+```yaml
+labels:
+  ai_review: symphony-ai-review # created on GitHub at start-up if missing
+gates:
+  merge: ai # owner (default) | ai
+review:
+  max_rounds: 2 # times a PR may go back to the coder before the owner decides
+  owner_paths: # gitignore-style globs; a PR touching one goes to the owner
+    - ".github/**"
+    - "**/migrations/**"
+```
+
+1. The coder hands off with `ai_review` (or `human_review` when the issue carries
+   `human_review` or `pilot_review`), after CI has run.
+2. On its next poll the orchestrator that owns the feature finds the PR with
+   `Closes #N`. Owner paths, CI that failed, is missing or cannot be read, and a draft
+   are settled at once, without a session. Pending CI waits.
+3. Otherwise it starts a fresh reviewer session for the head commit in
+   `.orchestrator/review-workspaces/<issue>` (made by the same `after_create` hook),
+   state in `.orchestrator/reviews/`. The reviewer may read, check the PR out and run
+   checks; edits, pushes, comments, labels, merges and questions are refused.
+4. Its last message ends with a JSON verdict. The orchestrator re-reads the issue and
+   the PR, then merges at the reviewed SHA, sends the feature back with `ready`, or
+   moves it to `human_review`, and says why in a comment.
+
+The owner can still use every button in "Chờ duyệt", or add `human_review` to an issue
+at any time to keep the decision. Reviews run one at a time, beside the coder's
+`max_concurrent_agents`.
+
 ## Limits of this version
 
 - The board's relay is in memory. Restarting the board drops unsent messages and the
@@ -139,5 +173,8 @@ Each orchestrator that shares a board sets `AGENT_NAME` (for example `luan-mac`,
   resumes the session from its last saved step.
 - Review comments and failed checks do not reach the session yet; say so in the chat
   or use "Request changes".
-- There is one agent role. Planner and reviewer sessions, a launchd service for the
-  Mac and saving transcripts to the `board-sessions` branch are later changes.
+- The coder and, with `gates.merge: ai`, the reviewer are the only roles. A planner
+  session, a launchd service for the Mac and saving transcripts to the
+  `board-sessions` branch are later changes.
+- The reviewer's live log is in the orchestrator's output, not in the board's chat
+  panel; its decisions are comments on the issue.

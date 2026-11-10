@@ -26,7 +26,8 @@ export function stageOf(issue, labels) {
   const is = (key) => labels[key] && has.has(lower(labels[key]));
   if (is("blocked")) return "blocked";
   if (is("ready")) return is("in_progress") ? "running" : "ready";
-  if (is("human_review") || is("pilot_review")) return "review";
+  if (is("human_review") || is("pilot_review") || is("ai_review"))
+    return "review";
   if (is("plan")) return "plan";
   return "idea";
 }
@@ -404,17 +405,17 @@ export function planAction(stage, action, labels) {
       approve: {
         merge: true,
         add: [],
-        remove: [L.human_review, L.pilot_review, L.in_progress],
+        remove: [L.human_review, L.pilot_review, L.ai_review, L.in_progress],
         verb: "Duyệt PR: merge",
       },
       revise: {
         add: [L.ready],
-        remove: [L.human_review, L.pilot_review, L.in_progress],
+        remove: [L.human_review, L.pilot_review, L.ai_review, L.in_progress],
         verb: "Yêu cầu sửa PR",
       },
       stop: {
         add: [],
-        remove: [L.human_review, L.pilot_review, L.in_progress],
+        remove: [L.human_review, L.pilot_review, L.ai_review, L.in_progress],
         close: "not_planned",
         verb: "Dừng feature",
       },
@@ -461,6 +462,8 @@ async function loadFeature(gh, number) {
   return issue;
 }
 
+// expectSha, when given, refuses to merge unless the pull request's head is
+// still the commit that was reviewed.
 export async function applyAction(
   gh,
   labels,
@@ -468,6 +471,7 @@ export async function applyAction(
   action,
   note = "",
   actor = ownerActor,
+  { expectSha = null } = {},
 ) {
   const issue = await loadFeature(gh, number);
   const stage = stageOf(issue, labels);
@@ -490,6 +494,13 @@ export async function applyAction(
     if (!pull)
       throw Object.assign(
         new Error("Không tìm thấy PR đang mở có Closes #" + number),
+        { status: 409 },
+      );
+    if (expectSha && pull.head.sha !== expectSha)
+      throw Object.assign(
+        new Error(
+          `PR #${pull.number} đã có commit mới sau lần duyệt (${String(pull.head.sha).slice(0, 7)})`,
+        ),
         { status: 409 },
       );
     const result = await gh.request(`${gh.base}/pulls/${pull.number}/merge`, {

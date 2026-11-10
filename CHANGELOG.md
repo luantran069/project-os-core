@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.0 (2026-11-10)
+
+- An AI reviewer can decide pull requests for the owner. With `gates.merge: ai` in
+  `project.yaml`, the coder hands off with the new label `labels.ai_review`
+  (`symphony-ai-review`) and the Claude orchestrator starts a separate, read-only
+  reviewer session for the head commit. Its verdict is advice; code merges only when
+  CI is green at the reviewed SHA and no file matches `review.owner_paths`. Failing CI
+  or "revise" sends the feature back to the coder at most `review.max_rounds` times
+  (2); everything else goes to the owner with `human_review`. `human_review` or
+  `pilot_review` on an issue keeps the decision with the owner. See "AI reviewer" in
+  `docs/orchestrator.md` and ADR-0005.
+- `gates.merge` defaults to `owner`: projects that do not set it keep today's flow.
+- The board counts `ai_review` as "Chờ duyệt", and its review buttons clear it. A merge
+  can be pinned to a reviewed SHA (`applyAction(..., { expectSha })`).
+- `template/WORKFLOW.md` no longer has the merge TODO: the coder never merges and hands
+  off as `gates.merge` says; on rework it reads the latest review feedback. With
+  `gates.merge: ai`, `check-project` also requires the prompt to name `labels.ai_review`.
+- To adopt: sync, add `labels.ai_review`, `gates.merge: ai` and a `review` block to
+  `project.yaml` (see `template/project.yaml`), update the "Handoff and merge" part of
+  `WORKFLOW.md` from the template, restart the orchestrators and redeploy the board.
+
 ## 0.9.0 (2026-11-10)
 
 - The board can hold a token's fingerprint (`sha256:<64 hex>`) instead of the token, in

@@ -29,6 +29,30 @@ const ownerOnly = [
 
 const fileTools = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
+// A reviewer only reads and runs checks. The orchestrator acts on its verdict,
+// so anything that changes the pull request, the issue or the remote is refused
+// outright, without asking the owner.
+const reviewerRefused = [
+  ...ownerOnly,
+  [/\bgit\s+push\b/, "push"],
+  [
+    /\bgh\s+(?:pr|issue)\s+(?:merge|close|reopen|edit|comment|review|ready|lock|delete|create|transfer)\b/,
+    "change the pull request or the issue",
+  ],
+  [/\bgh\s+label\b/, "change labels"],
+  [
+    /\bgh\s+api\b[^\n;&|]*(?:-X|--method)\s*(?:POST|PUT|PATCH|DELETE)\b/i,
+    "write through the GitHub API",
+  ],
+  [
+    /\bgh\s+api\b[^\n;&|]*\s(?:-f|-F|--field|--raw-field|--input)\b/,
+    "write through the GitHub API",
+  ],
+];
+
+const reviewerNote = (reason) =>
+  `A reviewer may not ${reason}. Only read, check out and run checks; put what should change in your verdict.`;
+
 const inside = (root, path) => {
   if (typeof path !== "string" || !path) return false;
   const rel = relative(root, resolve(root, path));
@@ -36,8 +60,9 @@ const inside = (root, path) => {
 };
 
 // Returns { behavior: "allow" }, { behavior: "ask", reason } or
-// { behavior: "deny", message }.
-export function decide(toolName, input = {}, { workspace }) {
+// { behavior: "deny", message }. role "reviewer" never asks: it is refused.
+export function decide(toolName, input = {}, { workspace, role = "coder" }) {
+  if (role === "reviewer") return decideReviewer(toolName, input);
   if (toolName === "AskUserQuestion")
     return { behavior: "ask", reason: "question" };
   if (toolName === "Bash") {
@@ -51,6 +76,24 @@ export function decide(toolName, input = {}, { workspace }) {
     return inside(workspace, path)
       ? { behavior: "allow" }
       : { behavior: "ask", reason: "write outside the workspace" };
+  }
+  return { behavior: "allow" };
+}
+
+function decideReviewer(toolName, input) {
+  if (toolName === "AskUserQuestion")
+    return {
+      behavior: "deny",
+      message:
+        "The reviewer cannot ask the owner. If the decision is the owner's, answer with the verdict escalate and say why.",
+    };
+  if (fileTools.has(toolName))
+    return { behavior: "deny", message: reviewerNote("edit files") };
+  if (toolName === "Bash") {
+    const command = String(input.command ?? "");
+    for (const [pattern, reason] of reviewerRefused)
+      if (pattern.test(command))
+        return { behavior: "deny", message: reviewerNote(reason) };
   }
   return { behavior: "allow" };
 }

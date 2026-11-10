@@ -9,6 +9,7 @@ export const labels = {
   blocked: "symphony-blocked",
   human_review: "symphony-human-review",
   pilot_review: "symphony-pilot-review",
+  ai_review: "symphony-ai-review",
 };
 
 export function fakeGitHub() {
@@ -82,6 +83,7 @@ export function fakeGitHub() {
     ],
   };
   const writes = [];
+  const pullFiles = {};
   const diffs = {
     40:
       "diff --git a/web/src/Detail.tsx b/web/src/Detail.tsx\n" +
@@ -125,14 +127,14 @@ export function fakeGitHub() {
       return json(
         Number(url.searchParams.get("page") ?? 1) > 1
           ? []
-          : [
+          : (pullFiles[m[1]] ?? [
               {
                 filename: "web/src/Detail.tsx",
                 status: "added",
                 additions: 3,
                 deletions: 0,
               },
-            ],
+            ]),
       );
     if (method === "POST" && (m = path.match(/^\/pulls\/(\d+)\/reviews$/)))
       return json(
@@ -157,8 +159,14 @@ export function fakeGitHub() {
     }
     if (method === "GET" && (m = path.match(/^\/issues\/(\d+)\/comments$/)))
       return json(comments[m[1]] ?? []);
-    if (method === "POST" && (m = path.match(/^\/issues\/(\d+)\/comments$/)))
+    if (method === "POST" && (m = path.match(/^\/issues\/(\d+)\/comments$/))) {
+      (comments[m[1]] ??= []).push({
+        user: { login: "board" },
+        created_at: at,
+        body: body.body,
+      });
       return json({}, 201);
+    }
     if (method === "POST" && (m = path.match(/^\/issues\/(\d+)\/labels$/))) {
       const issue = issues.find((i) => i.number === Number(m[1]));
       issue.labels.push(...body.labels.map(label));
@@ -235,5 +243,15 @@ export function fakeGitHub() {
     }
     return json({ message: "unexpected" }, 500);
   };
-  return { fetchImpl, issues, pulls, writes, imageFiles, sessionFiles, diffs };
+  return {
+    fetchImpl,
+    issues,
+    pulls,
+    writes,
+    comments,
+    pullFiles,
+    imageFiles,
+    sessionFiles,
+    diffs,
+  };
 }
