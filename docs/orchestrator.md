@@ -53,7 +53,13 @@ runtime:
     max_turns: 200 # agent steps per message
     approval_timeout_minutes: 30
     poll_seconds: 30
+  chat: # read by the board
+    stale_hours: 24 # warn when a chat's workpad stands still this long
 ```
+
+No orchestrator takes a feature labelled `agent:chat` or `agent:chat-<suffix>`: the
+owner's chat builds those itself through the board (see "The owner's chat builds a
+feature" in `docs/board.md`). `AGENT_NAME` cannot be `chat` or start with `chat-`.
 
 `WORKFLOW.md` keeps its role: its prompt is the first turn of an approved feature, and
 its `hooks.after_create` makes each feature's copy of the repository. Where the prompt

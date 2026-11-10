@@ -140,6 +140,25 @@ test("the check reports a missing file, a newer core and a label mismatch", () =
     assert.ok(errors.some((e) => e.includes('ready label "os-ready"')));
   }));
 
+test("runtime.chat.stale_hours must be a number above 0", () =>
+  withProject(async (target) => {
+    const set = (value) =>
+      edit(join(target, "project.yaml"), (text) =>
+        text.replace(
+          /\n  max_concurrent_agents: 1\n(?:  chat:\n    stale_hours: .*\n)?/,
+          `\n  max_concurrent_agents: 1\n  chat:\n    stale_hours: ${value}\n`,
+        ),
+      );
+    await set("24");
+    assert.deepEqual((await checkProject(target)).errors, []);
+    for (const bad of ["0", "soon"]) {
+      await set(bad);
+      assert.deepEqual((await checkProject(target)).errors, [
+        "project.yaml runtime.chat.stale_hours must be a number above 0",
+      ]);
+    }
+  }));
+
 test("leftover placeholders are errors", () =>
   withProject(async (target) => {
     await writeFile(join(target, "memory/state.md"), "Owner: __OWNER__\n");

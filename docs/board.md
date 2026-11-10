@@ -106,6 +106,47 @@ Workpad to pick up the work. The panel asks before moving a feature that has a s
 `AGENT_TOKEN` can stay alongside `AGENT_TOKENS`. Its agent has no name and takes the
 features with no `agent:` label, as before 0.7.0.
 
+## The owner's chat builds a feature
+
+The owner's Claude Code chat, working through the board's MCP server, can build a
+`ready` feature itself instead of handing it to an orchestrator (ADR-0006).
+
+- `claim_feature` takes the feature number and an optional suffix. It works only in the
+  Ready column, so G2 still decides what may be built. It sets `agent:chat` (or
+  `agent:chat-<suffix>`) and the in-progress label, stops the orchestrator that had the
+  feature, leaves a signed comment, and returns the same rendered `WORKFLOW.md` prompt an
+  agent gets, read from the default branch. The chat follows it: a task worktree, the
+  Agent Workpad, the checks in `AGENTS.md`, a pull request with `Closes #<issue>`, green
+  CI, the move to review. A section after the prompt tells the chat what differs for
+  it: never add `ai_review` (no AI reviewer takes a chat's feature), hand off with
+  `human_review`, then review the diff with `get_pull_request` and merge with
+  `decide approve` once CI is green, or block the feature if CI cannot pass.
+- `chat` is a reserved agent name: `chat` alone or `chat-<suffix>` (lowercase letters,
+  digits and dashes, 31 characters in all). Every chat uses the MCP token, so the name
+  needs no token and the suffix only says which chat holds the feature. `assign_agent`
+  accepts these names too, to move a feature between chats and agents at any time; the
+  new holder continues from the workpad. No `AGENT_TOKENS` entry or `AGENT_NAME` may use
+  them.
+- No orchestrator takes a chat's feature, the unnamed one included, and a chat's
+  features do not count towards `max_concurrent_agents`. The card shows "Chat: `<name>`"
+  and the feature's popup says no orchestrator session exists; `agent_session`,
+  `message_agent`, `answer_agent` and `control_agent` say the same.
+- A chat feature in Running whose Agent Workpad has not changed for
+  `runtime.chat.stale_hours` hours (24 by default) gets a warning on its card ("Workpad
+  đứng yên N giờ") and in `board_overview` (`warnings`, and each feature's `chat`) and
+  `get_feature`. The clock starts at the later of the workpad's last edit and the chat
+  taking the feature. The board only warns: the owner reassigns the feature if the chat
+  was closed.
+
+```yaml
+runtime:
+  chat:
+    stale_hours: 24
+```
+
+Symphony reads only the ready label, so on a project with `runtime.orchestrator:
+symphony` the board refuses to give a feature to a chat.
+
 ## The board as an MCP server
 
 With `BOARD_MCP_TOKEN` set, the board also answers the Model Context Protocol at
@@ -145,7 +186,8 @@ claude mcp add --transport http --scope user board https://<board domain>/mcp \
 | `decide`              | The board's buttons: `approve`, `revise` (needs a note), `stop`, with the same effect per column |
 | `get_pull_request`    | A PR's description, check runs, changed files and diff, in 60,000-character windows              |
 | `review_pull_request` | A GitHub review (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`) at the PR's head                       |
-| `assign_agent`        | Give the feature to a named agent                                                                |
+| `assign_agent`        | Give the feature to a named agent, or to the owner's chat (`chat`, `chat-<suffix>`)              |
+| `claim_feature`       | Take a `ready` feature to build in this chat; returns the WORKFLOW.md prompt                     |
 | `agent_session`       | The session's status, pending questions and approvals, workspace, session id and new events      |
 | `message_agent`       | Send the session a message                                                                       |
 | `answer_agent`        | Allow or refuse an approval, or answer a question                                                |

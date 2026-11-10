@@ -623,6 +623,25 @@
         background: var(--warn);
         color: #fff;
       }
+      .chip.owner-chat {
+        background: var(--accent);
+        color: #fff;
+      }
+      /* A feature the owner's chat builds: no orchestrator session to show. */
+      .chat-hold {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .chat-hold > p {
+        margin: 10px 14px;
+      }
+      .chat-hold > .warning {
+        color: var(--warn);
+        font-weight: 600;
+      }
       .session {
         display: grid;
         gap: 8px;
@@ -1047,8 +1066,36 @@
         !state.data.agent?.unnamed &&
         feature.stage !== "done";
 
+      // Board warnings are Markdown for the MCP; the page shows plain text.
+      const plain = (text) => String(text ?? "").replaceAll("`", "");
+
       function agentChip(feature) {
         const chips = [];
+        // The owner's chat builds it: no orchestrator session to report.
+        if (feature.chat) {
+          chips.push(
+            el(
+              "span",
+              {
+                class: "chip owner-chat",
+                title: "Chat của chủ dự án đang làm",
+              },
+              `Chat: ${feature.chat.name}`,
+            ),
+          );
+          if (feature.chat.stale)
+            chips.push(
+              el(
+                "span",
+                {
+                  class: "chip agent-request",
+                  title: plain(feature.chat.warning),
+                },
+                `Workpad đứng yên ${feature.chat.idleHours} giờ`,
+              ),
+            );
+          return chips;
+        }
         if (feature.agent)
           chips.push(el("span", { class: "chip" }, `Agent: ${feature.agent}`));
         else if (needsAgent(feature))
@@ -1091,7 +1138,8 @@
             ),
           ),
         );
-        select.value = feature.agent ?? "";
+        // A chat is not in the list: show the placeholder.
+        select.value = feature.chat ? "" : (feature.agent ?? "");
         const button = el("button", {}, feature.agent ? "Đổi agent" : "Giao");
         button.addEventListener("click", async () => {
           const agent = select.value;
@@ -1680,7 +1728,28 @@
         const notePicker = imagePicker(note, error);
         const workpad = el("div", { class: "body" }, "Đang tải bình luận…");
         const sessions = el("p", { class: "meta" });
-        const chat = state.data.agent ? chatPanel(feature) : null;
+        const chat =
+          state.data.agent && !feature.chat ? chatPanel(feature) : null;
+        const chatHold = feature.chat
+          ? el(
+              "section",
+              { class: "chat-hold", "aria-label": "Chat của chủ dự án" },
+              el(
+                "p",
+                {},
+                `Chat của chủ dự án (${feature.chat.name}) đang tự làm feature này qua MCP. Không có phiên orchestrator; tiến độ nằm trong Agent Workpad.`,
+              ),
+              feature.chat.stale
+                ? el("p", { class: "warning" }, plain(feature.chat.warning))
+                : null,
+              agentPicker(
+                feature,
+                () => false,
+                () => dialog.close(),
+                null,
+              ),
+            )
+          : null;
         const pull = feature.pull;
         const act = async (action, label, button) => {
           if (notePicker.busy()) {
@@ -1782,6 +1851,7 @@
             sessions,
             chat?.node,
             chat?.terminal,
+            chatHold,
             actionButtons.length ? el("h4", {}, "Quyết định") : null,
             actionButtons.length ? note : null,
             actionButtons.length ? notePicker.node : null,

@@ -130,6 +130,7 @@ test("a client initializes, lists the tools and gets JSON-RPC errors", () =>
       "answer_agent",
       "assign_agent",
       "board_overview",
+      "claim_feature",
       "comment_feature",
       "control_agent",
       "create_idea",

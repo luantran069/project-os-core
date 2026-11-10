@@ -5,6 +5,7 @@ WORKDIR /app
 RUN npm init -y >/dev/null && npm install --omit=dev --no-audit --no-fund yaml@2.9.1
 COPY project.yaml ./
 COPY .project-os/symphony/project.mjs .project-os/symphony/
+COPY .project-os/orchestrator/prompt.mjs .project-os/orchestrator/
 COPY .project-os/board/ .project-os/board/
 ENV NODE_ENV=production PORT=8080
 EXPOSE 8080

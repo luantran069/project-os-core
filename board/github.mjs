@@ -47,6 +47,30 @@ export function assignedAgent(issue) {
   return null;
 }
 
+// The owner's chat (their Claude Code session, through the board's MCP) can
+// hold a feature itself: `agent:chat` or `agent:chat-<suffix>`. Every chat
+// shares the MCP token, so the suffix only labels which one. No orchestrator
+// takes these features, the unnamed one included.
+export const chatName = /^chat(?:-[a-z0-9][a-z0-9-]*)?$/;
+export const maxAgentName = 31;
+export const isChatAgent = (name) =>
+  typeof name === "string" &&
+  name.length <= maxAgentName &&
+  chatName.test(name);
+
+// A chat name from an optional suffix: "" or undefined gives "chat".
+export function chatAgent(suffix) {
+  const name = suffix ? `chat-${suffix}` : "chat";
+  if (!isChatAgent(name))
+    throw Object.assign(
+      new Error(
+        `Tên chat không hợp lệ: "${name}" (chat hoặc chat-<hậu tố>, chữ thường, số và gạch ngang, tối đa ${maxAgentName} ký tự)`,
+      ),
+      { status: 400 },
+    );
+  return name;
+}
+
 export function priorityOf(issue) {
   for (const label of issue.labels ?? []) {
     const name = lower(label.name).replace(/^priority[:\s-]*/, "");
@@ -323,7 +347,11 @@ async function pullDetails(gh, pull) {
 }
 
 // Every open feature, the most recently closed ones, and their pull requests.
-export async function loadBoard(gh, labels, { closedLimit = 20 } = {}) {
+export async function loadBoard(
+  gh,
+  labels,
+  { closedLimit = 20, staleHours = defaultStaleHours, now = Date.now } = {},
+) {
   const [open, closed, pulls] = await Promise.all([
     gh.pages(`${gh.base}/issues?state=open&sort=updated&direction=desc`),
     gh.request(
@@ -339,14 +367,26 @@ export async function loadBoard(gh, labels, { closedLimit = 20 } = {}) {
   const features = await Promise.all(
     issues.map(async (issue) => {
       const pull = byIssue.get(issue.number);
+      const stage = stageOf(issue, labels);
+      const agent = assignedAgent(issue);
+      // Only a running chat feature can stall, so only those cost a read.
+      const chat = isChatAgent(agent)
+        ? chatHold(
+            agent,
+            stage,
+            stage === "running" ? await loadComments(gh, issue.number) : [],
+            { staleHours, now: now() },
+          )
+        : null;
       return {
         number: issue.number,
         title: issue.title,
         url: issue.html_url,
         body: issue.body ?? "",
-        stage: stageOf(issue, labels),
+        stage,
         priority: priorityOf(issue),
-        agent: assignedAgent(issue),
+        agent,
+        chat,
         labels: (issue.labels ?? []).map((label) => label.name),
         updated: issue.updated_at,
         comments: issue.comments ?? 0,
@@ -371,9 +411,53 @@ export async function loadComments(gh, number) {
   return comments.map((comment) => ({
     author: comment.user?.login ?? "",
     created: comment.created_at,
+    updated: comment.updated_at ?? comment.created_at,
     body: comment.body ?? "",
     workpad: /^\s*##\s*Agent Workpad/i.test(comment.body ?? ""),
   }));
+}
+
+// The comments that give a feature to a chat: claim_feature's and
+// assign_agent's. The stall clock starts at the latest one.
+export const claimVerb = (name) => `Chat \`${name}\` nhận làm`;
+export const chatAssignVerb = (name) =>
+  `Giao cho chat \`${name}\` của chủ dự án`;
+const chatHandover = /^\s*\*\*(?:Chat `[^`]+` nhận làm|Giao cho chat `)/;
+
+export const defaultStaleHours = 24;
+
+// What the board says about a feature a chat holds: its name and, while it
+// runs, how long its Agent Workpad has stood still. The clock starts at the
+// later of the workpad's last edit and the chat taking the feature, so a
+// workpad an earlier agent left does not count against the chat. The board
+// only warns; nothing stops or moves the feature.
+export function chatHold(
+  name,
+  stage,
+  comments,
+  { staleHours = defaultStaleHours, now = Date.now() } = {},
+) {
+  const hold = { name, since: null, idleHours: null, stale: false };
+  if (stage !== "running") return hold;
+  const time = (iso) => (iso ? Date.parse(iso) : NaN);
+  const pad = comments.filter((c) => c.workpad).pop();
+  const claim = comments.filter((c) => chatHandover.test(c.body)).pop();
+  const times = [time(pad?.updated ?? pad?.created), time(claim?.created)];
+  const since = Math.max(...times.filter(Number.isFinite));
+  if (!Number.isFinite(since)) return hold;
+  const idleHours = Math.max(0, Math.floor((now - since) / 3_600_000));
+  const stale = now - since >= staleHours * 3_600_000;
+  return {
+    ...hold,
+    since: new Date(since).toISOString(),
+    idleHours,
+    stale,
+    ...(stale
+      ? {
+          warning: `Chat \`${name}\` chưa cập nhật Agent Workpad ${idleHours} giờ (ngưỡng ${staleHours} giờ). Có thể chat đã đóng: xem workpad rồi giao lại nếu cần.`,
+        }
+      : {}),
+  };
 }
 
 // What each button does in each column: labels to add and remove, whether to
@@ -539,34 +623,108 @@ export async function applyAction(
   return { stage, action, merged };
 }
 
+const handoverNote = (before, agent) =>
+  isChatAgent(agent)
+    ? `Trước đó là \`${before}\`. Chat \`${agent}\` làm tiếp từ issue và Agent Workpad; không orchestrator nào chạy feature này nữa.`
+    : `Trước đó là \`${before}\`. Agent mới bắt đầu một phiên Claude mới và đọc lại issue cùng Agent Workpad${isChatAgent(before) ? "" : `; phiên cũ vẫn nằm trên máy của \`${before}\``}.`;
+
+async function setAgentLabel(gh, issue, agent) {
+  for (const label of issue.labels ?? [])
+    if (lower(label.name).startsWith(agentPrefix))
+      await gh.request(
+        `${gh.base}/issues/${issue.number}/labels/${encodeURIComponent(label.name)}`,
+        { method: "DELETE" },
+      );
+  await gh.request(`${gh.base}/issues/${issue.number}/labels`, {
+    method: "POST",
+    body: { labels: [`${agentPrefix}${agent}`] },
+  });
+}
+
 // Gives a feature to one agent: its `agent:<name>` label replaces any other.
 // Returns the agent it had before, or null.
 export async function assignAgent(gh, number, agent, actor = ownerActor) {
   const issue = await loadFeature(gh, number);
   const before = assignedAgent(issue);
   if (before === agent) return { before, changed: false };
-  for (const label of issue.labels ?? [])
-    if (lower(label.name).startsWith(agentPrefix))
-      await gh.request(
-        `${gh.base}/issues/${number}/labels/${encodeURIComponent(label.name)}`,
-        { method: "DELETE" },
-      );
-  await gh.request(`${gh.base}/issues/${number}/labels`, {
-    method: "POST",
-    body: { labels: [`${agentPrefix}${agent}`] },
-  });
-  const lines = [`**Giao cho agent \`${agent}\`** (${actor})`];
-  if (before)
-    lines.push(
-      "",
-      `Trước đó là \`${before}\`. Agent mới bắt đầu một phiên Claude mới và đọc lại issue cùng Agent Workpad; phiên cũ vẫn nằm trên máy của \`${before}\`.`,
-    );
+  await setAgentLabel(gh, issue, agent);
+  const lines = [
+    isChatAgent(agent)
+      ? `**${chatAssignVerb(agent)}** (${actor})`
+      : `**Giao cho agent \`${agent}\`** (${actor})`,
+  ];
+  if (before) lines.push("", handoverNote(before, agent));
   await gh.request(`${gh.base}/issues/${number}/comments`, {
     method: "POST",
     body: { body: lines.join("\n") },
   });
   return { before, changed: true };
 }
+
+// The owner's chat takes a `ready` feature to build it itself: the chat's
+// `agent:` label replaces any other, the feature moves to running, and a
+// signed comment records it. Only `ready` works, so G2 still decides what may
+// be built. Returns the issue and the agent it had before.
+export async function claimFeature(gh, labels, number, agent, actor) {
+  const issue = await loadFeature(gh, number);
+  const stage = stageOf(issue, labels);
+  if (stage !== "ready")
+    throw Object.assign(
+      new Error(
+        `Chỉ nhận làm được feature ở cột Sẵn sàng (đã duyệt G2); #${number} đang ở cột ${columns.find((c) => c.id === stage)?.title ?? stage}`,
+      ),
+      { status: 409 },
+    );
+  const before = assignedAgent(issue);
+  if (before !== agent) await setAgentLabel(gh, issue, agent);
+  if (labels.in_progress)
+    await gh.request(`${gh.base}/issues/${number}/labels`, {
+      method: "POST",
+      body: { labels: [labels.in_progress] },
+    });
+  const lines = [
+    `**${claimVerb(agent)}** (${actor})`,
+    "",
+    "Chat của chủ dự án tự làm feature này theo WORKFLOW.md: worktree `ai/<issue>`, Agent Workpad, kiểm tra trong `AGENTS.md`, PR bắt đầu bằng `Closes #" +
+      number +
+      "`. Không orchestrator nào chạy nó.",
+  ];
+  if (before && before !== agent) lines.push("", handoverNote(before, agent));
+  await gh.request(`${gh.base}/issues/${number}/comments`, {
+    method: "POST",
+    body: { body: lines.join("\n") },
+  });
+  return { issue, before, changed: before !== agent };
+}
+
+// What claim_feature adds after the WORKFLOW.md prompt: the owner's chat
+// reviews and merges its own pull request (happy-clink ADR-0010), where the
+// workflow has a coding agent hand off and never merge. Orchestrator agents
+// never get this.
+export const chatPromptSection = (labels, number, agent) => {
+  const label = (key, fallback) => `\`${labels[key] ?? fallback}\``;
+  return `
+## For the owner's chat (\`${agent}\`)
+
+You are the owner's chat, not an orchestrator agent. These rules replace the parts of
+the prompt above that conflict with them; every other step still applies (task
+worktree, Agent Workpad naming this session and machine, the verification in
+\`AGENTS.md\`, a PR whose body starts with \`Closes #${number}\`).
+
+- Never add ${label("ai_review", "ai_review")}: no AI reviewer takes a chat's feature.
+- Hand off as for \`gates.merge: owner\`: remove ${label("ready", "ready")} and
+  ${label("in_progress", "in_progress")} and add ${label("human_review", "human_review")}, so the
+  feature is in review.
+- Once the PR's CI is green, review the diff yourself with the board's
+  \`get_pull_request\`, then merge with \`decide approve\` (it squash-merges the PR at its
+  head and closes the issue). If CI cannot pass, block the feature as the workflow says
+  instead of merging.
+`;
+};
+
+// WORKFLOW.md on the default branch: the board has no checkout of its own.
+export const loadWorkflowText = async (gh) =>
+  (await gh.binary(`${gh.base}/contents/WORKFLOW.md`)).toString("utf8");
 
 export async function createIdea(gh, labels, title, body = "", priority) {
   const issue = await gh.request(`${gh.base}/issues`, {
@@ -635,13 +793,19 @@ export async function findPull(gh, number) {
 
 // A feature with everything needed to judge it: body, comments, stage, the
 // decisions its column allows and its pull request.
-export async function loadFeatureDetails(gh, labels, number) {
+export async function loadFeatureDetails(
+  gh,
+  labels,
+  number,
+  { staleHours = defaultStaleHours, now = Date.now } = {},
+) {
   const [issue, comments, pull] = await Promise.all([
     loadFeature(gh, number),
     loadComments(gh, number),
     findPull(gh, number),
   ]);
   const stage = stageOf(issue, labels);
+  const agent = assignedAgent(issue);
   return {
     number,
     title: issue.title,
@@ -649,7 +813,10 @@ export async function loadFeatureDetails(gh, labels, number) {
     state: issue.state,
     stage,
     priority: priorityOf(issue),
-    agent: assignedAgent(issue),
+    agent,
+    chat: isChatAgent(agent)
+      ? chatHold(agent, stage, comments, { staleHours, now: now() })
+      : null,
     labels: (issue.labels ?? []).map((label) => label.name),
     body: issue.body ?? "",
     actions: ["approve", "revise", "stop"]
