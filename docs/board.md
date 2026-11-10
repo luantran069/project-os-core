@@ -104,6 +104,54 @@ Workpad to pick up the work. The panel asks before moving a feature that has a s
 `AGENT_TOKEN` can stay alongside `AGENT_TOKENS`. Its agent has no name and takes the
 features with no `agent:` label, as before 0.7.0.
 
+## The board as an MCP server
+
+With `BOARD_MCP_TOKEN` set, the board also answers the Model Context Protocol at
+`https://<board domain>/mcp`, so the owner's AI can do everything the owner does on the
+page. Without it `/mcp` returns 404.
+
+```text
+BOARD_MCP_TOKEN=<32+ random characters, not any agent's token>
+```
+
+Add it to Claude Code (once per machine; `--scope user` makes it available in every
+project):
+
+```bash
+claude mcp add --transport http --scope user board https://<board domain>/mcp \
+  --header "Authorization: Bearer <BOARD_MCP_TOKEN>"
+```
+
+| Tool                  | What it does                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `board_overview`      | Features by column with priority, agent, session status, pending requests, PR checks, preview    |
+| `get_feature`         | One feature: body, labels, stage, the decisions its column allows, comments, PR, session state   |
+| `create_idea`         | A new issue in Idea, with an optional priority                                                   |
+| `update_feature`      | Rewrite the title or body (write the plan), set or clear the priority                            |
+| `comment_feature`     | Comment on the issue                                                                             |
+| `decide`              | The board's buttons: `approve`, `revise` (needs a note), `stop`, with the same effect per column |
+| `get_pull_request`    | A PR's description, check runs, changed files and diff, in 60,000-character windows              |
+| `review_pull_request` | A GitHub review (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`) at the PR's head                       |
+| `assign_agent`        | Give the feature to a named agent                                                                |
+| `agent_session`       | The session's status, pending questions and approvals, workspace, session id and new events      |
+| `message_agent`       | Send the session a message                                                                       |
+| `answer_agent`        | Allow or refuse an approval, or answer a question                                                |
+| `control_agent`       | `takeover` or `release` the session                                                              |
+
+The token carries the owner's full power on the board: `decide` with `approve` on a
+feature in review squash-merges its pull request, and `stop` closes features. The board
+does not ask again; the MCP client's own permission prompt is the only check, so keep
+`decide` and `assign_agent` out of auto-approved tools unless the AI is meant to pass the
+gates alone. Every decision leaves the usual issue comment, naming
+"AI của chủ dự án, qua MCP" instead of the owner. GitHub refuses `APPROVE` and
+`REQUEST_CHANGES` reviews from the account that opened the pull request; the AI can
+leave a `COMMENT` review or `decide revise` instead.
+
+The endpoint is stateless Streamable HTTP: one JSON-RPC request per POST, answered with
+JSON. The token is accepted only there, the owner's cookie and the agents' tokens are not,
+and a request with an `Origin` header (a browser page) is refused. Rotate the token by
+changing the variable and redeploying.
+
 ## Deploying on Dokploy
 
 1. Create a fine-grained token for the project repository only, with: Issues
@@ -118,6 +166,7 @@ features with no `agent:` label, as before 0.7.0.
    - `BOARD_PASSWORD`: login password, at least 12 characters.
    - `BOARD_SESSION_SECRET`: a long random string; keeps sessions valid across
      restarts. Without it you must log in again after every deploy.
+   - `BOARD_MCP_TOKEN` (optional): turns on `/mcp` for the owner's AI, see above.
 4. Attach a domain with HTTPS, port 8080. The session cookie is sent over HTTPS only.
 5. Open the domain and log in. The board refreshes every minute; the ↻ button
    reloads at once.

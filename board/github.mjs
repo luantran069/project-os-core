@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 const api = "https://api.github.com";
 const closingRef = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
 const previewRef = /^\s*preview:\s*(https:\/\/\S+)/im;
-const priorities = ["now", "next", "later"];
+export const priorities = ["now", "next", "later"];
 
 export const columns = [
   { id: "idea", title: "Ý tưởng", gate: "G1" },
@@ -100,6 +100,10 @@ export function createGitHub({ repo, token, fetchImpl = fetch }) {
     });
     return Buffer.from(await response.arrayBuffer());
   }
+  // A text media type, such as a pull request's diff.
+  async function text(path, accept) {
+    return (await send(path, { accept })).text();
+  }
   async function pages(path, limit = 10) {
     const items = [];
     for (let page = 1; page <= limit; page++) {
@@ -112,7 +116,7 @@ export function createGitHub({ repo, token, fetchImpl = fetch }) {
     }
     return items;
   }
-  return { request, binary, pages, base };
+  return { request, binary, text, pages, base };
 }
 
 // Images live on their own branch with no shared history, so they never reach
@@ -443,10 +447,29 @@ export function planAction(stage, action, labels) {
   };
 }
 
-export async function applyAction(gh, labels, number, action, note = "") {
+// Who a decision comment names. The board's buttons are the owner's; the MCP
+// endpoint is the owner's AI acting for them.
+export const ownerActor = "chủ dự án, từ board";
+export const mcpActor = "AI của chủ dự án, qua MCP";
+
+const notFeature = () =>
+  Object.assign(new Error("Not a feature"), { status: 400 });
+
+async function loadFeature(gh, number) {
   const issue = await gh.request(`${gh.base}/issues/${number}`);
-  if (issue.pull_request)
-    throw Object.assign(new Error("Not a feature"), { status: 400 });
+  if (issue.pull_request) throw notFeature();
+  return issue;
+}
+
+export async function applyAction(
+  gh,
+  labels,
+  number,
+  action,
+  note = "",
+  actor = ownerActor,
+) {
+  const issue = await loadFeature(gh, number);
   const stage = stageOf(issue, labels);
   const plan = planAction(stage, action, labels);
   if (!plan)
@@ -475,7 +498,7 @@ export async function applyAction(gh, labels, number, action, note = "") {
     });
     merged = { number: pull.number, sha: result?.sha ?? null };
   }
-  const lines = [`**${plan.verb}** (chủ dự án, từ board)`];
+  const lines = [`**${plan.verb}** (${actor})`];
   if (merged) lines.push(`Đã merge PR #${merged.number}.`);
   if (note.trim()) lines.push("", note.trim());
   await gh.request(`${gh.base}/issues/${number}/comments`, {
@@ -507,10 +530,8 @@ export async function applyAction(gh, labels, number, action, note = "") {
 
 // Gives a feature to one agent: its `agent:<name>` label replaces any other.
 // Returns the agent it had before, or null.
-export async function assignAgent(gh, number, agent) {
-  const issue = await gh.request(`${gh.base}/issues/${number}`);
-  if (issue.pull_request)
-    throw Object.assign(new Error("Not a feature"), { status: 400 });
+export async function assignAgent(gh, number, agent, actor = ownerActor) {
+  const issue = await loadFeature(gh, number);
   const before = assignedAgent(issue);
   if (before === agent) return { before, changed: false };
   for (const label of issue.labels ?? [])
@@ -523,7 +544,7 @@ export async function assignAgent(gh, number, agent) {
     method: "POST",
     body: { labels: [`${agentPrefix}${agent}`] },
   });
-  const lines = [`**Giao cho agent \`${agent}\`** (chủ dự án, từ board)`];
+  const lines = [`**Giao cho agent \`${agent}\`** (${actor})`];
   if (before)
     lines.push(
       "",
@@ -536,10 +557,163 @@ export async function assignAgent(gh, number, agent) {
   return { before, changed: true };
 }
 
-export async function createIdea(gh, labels, title, body = "") {
+export async function createIdea(gh, labels, title, body = "", priority) {
   const issue = await gh.request(`${gh.base}/issues`, {
     method: "POST",
-    body: { title, body, labels: [labels.idea].filter(Boolean) },
+    body: {
+      title,
+      body,
+      labels: [labels.idea, priority && `priority-${priority}`].filter(Boolean),
+    },
   });
   return { number: issue.number, url: issue.html_url };
+}
+
+// Rewrites a feature's title or body (a plan, say) and sets its priority;
+// "none" removes it. GitHub keeps the body's edit history.
+export async function updateFeature(gh, number, { title, body, priority }) {
+  const issue = await loadFeature(gh, number);
+  const patch = {};
+  if (title !== undefined) patch.title = title;
+  if (body !== undefined) patch.body = body;
+  if (Object.keys(patch).length)
+    await gh.request(`${gh.base}/issues/${number}`, {
+      method: "PATCH",
+      body: patch,
+    });
+  if (priority !== undefined) {
+    for (const label of issue.labels ?? [])
+      if (priorityOf({ labels: [label] }))
+        await gh.request(
+          `${gh.base}/issues/${number}/labels/${encodeURIComponent(label.name)}`,
+          { method: "DELETE" },
+        );
+    if (priority !== "none")
+      await gh.request(`${gh.base}/issues/${number}/labels`, {
+        method: "POST",
+        body: { labels: [`priority-${priority}`] },
+      });
+  }
+  return {
+    number,
+    updated: [
+      ...Object.keys(patch),
+      ...(priority === undefined ? [] : ["priority"]),
+    ],
+  };
+}
+
+export async function commentFeature(gh, number, body) {
+  await loadFeature(gh, number);
+  const comment = await gh.request(`${gh.base}/issues/${number}/comments`, {
+    method: "POST",
+    body: { body },
+  });
+  return { number, url: comment?.html_url ?? null };
+}
+
+// The pull request that closes a feature: the open one, else the latest.
+export async function findPull(gh, number) {
+  const pulls = await gh.pages(
+    `${gh.base}/pulls?state=all&sort=updated&direction=desc`,
+    1,
+  );
+  const linked = pulls.filter((p) => closedIssues(p.body).includes(number));
+  return linked.find((p) => p.state === "open") ?? linked[0] ?? null;
+}
+
+// A feature with everything needed to judge it: body, comments, stage, the
+// decisions its column allows and its pull request.
+export async function loadFeatureDetails(gh, labels, number) {
+  const [issue, comments, pull] = await Promise.all([
+    loadFeature(gh, number),
+    loadComments(gh, number),
+    findPull(gh, number),
+  ]);
+  const stage = stageOf(issue, labels);
+  return {
+    number,
+    title: issue.title,
+    url: issue.html_url,
+    state: issue.state,
+    stage,
+    priority: priorityOf(issue),
+    agent: assignedAgent(issue),
+    labels: (issue.labels ?? []).map((label) => label.name),
+    body: issue.body ?? "",
+    actions: ["approve", "revise", "stop"]
+      .map((action) => ({ action, plan: planAction(stage, action, labels) }))
+      .filter(({ plan }) => plan)
+      .map(({ action, plan }) => ({
+        action,
+        does: plan.verb,
+        merges: Boolean(plan.merge),
+        closes: Boolean(plan.close || plan.merge),
+      })),
+    comments,
+    pull: pull ? await pullDetails(gh, pull) : null,
+  };
+}
+
+const maxDiff = 60_000;
+
+// A pull request for review: its description, check runs, changed files and a
+// window of its diff (`offset` pages through a long one).
+export async function loadPull(
+  gh,
+  number,
+  { offset = 0, limit = maxDiff } = {},
+) {
+  const pull = await gh.request(`${gh.base}/pulls/${number}`);
+  const sha = pull.head?.sha;
+  const [details, files, diff, runs] = await Promise.all([
+    pullDetails(gh, pull),
+    gh.pages(`${gh.base}/pulls/${number}/files`, 3),
+    gh.text(`${gh.base}/pulls/${number}`, "application/vnd.github.diff"),
+    sha
+      ? gh
+          .request(`${gh.base}/commits/${sha}/check-runs?per_page=100`)
+          .then((r) => r.check_runs ?? [])
+          .catch(() => [])
+      : [],
+  ]);
+  const size = Math.min(Math.max(limit, 1000), maxDiff);
+  const end = Math.min(offset + size, diff.length);
+  return {
+    ...details,
+    body: pull.body ?? "",
+    author: pull.user?.login ?? "",
+    base: pull.base?.ref ?? "",
+    head: pull.head?.ref ?? "",
+    mergeable: pull.mergeable ?? null,
+    closes: closedIssues(pull.body),
+    checkRuns: runs.map((run) => ({
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      url: run.html_url ?? null,
+    })),
+    files: files.map((file) => ({
+      path: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+    })),
+    diff: diff.slice(offset, end),
+    diffLength: diff.length,
+    nextOffset: end < diff.length ? end : null,
+  };
+}
+
+export const reviewEvents = ["COMMENT", "APPROVE", "REQUEST_CHANGES"];
+
+// A review on the pull request itself. GitHub refuses APPROVE and
+// REQUEST_CHANGES from the account that opened it.
+export async function reviewPull(gh, number, event, body) {
+  const pull = await gh.request(`${gh.base}/pulls/${number}`);
+  const review = await gh.request(`${gh.base}/pulls/${number}/reviews`, {
+    method: "POST",
+    body: { event, body, commit_id: pull.head?.sha },
+  });
+  return { number, event, url: review?.html_url ?? null };
 }

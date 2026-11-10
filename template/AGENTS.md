@@ -23,7 +23,7 @@ not require a worktree.
 2. If the checkout is dirty or the fast-forward is refused, preserve it and report
    why. Never stash, reset, discard changes, or move an existing task worktree.
 3. Reuse an active task worktree when continuing its task. For new work, create a
-   unique task worktree from the latest `origin/master` on a `codex/<task>` branch,
+   unique task worktree from the latest `origin/master` on a `ai/<task>` branch,
    under `.symphony/task-worktrees/<task>` when no managed worktree tool exists.
 4. Install dependencies, format and verify inside that worktree.
 5. Target pull requests at `master`. Never force-push or include unrelated work.

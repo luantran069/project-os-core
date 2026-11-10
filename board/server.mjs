@@ -16,8 +16,10 @@ import {
   loadImage,
   loadSession,
   maxImageBytes,
+  mcpActor,
   uploadImage,
 } from "./github.mjs";
+import { createMcp } from "./mcp.mjs";
 import { agentName, createRelay } from "./relay.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
@@ -94,6 +96,8 @@ export function createBoard({
   now = Date.now,
   agentToken = "",
   agentTokens = {},
+  mcpToken = "",
+  version = "0",
 }) {
   let cache = null;
   // Agent name -> token. "" is the unnamed agent of a single AGENT_TOKEN,
@@ -123,6 +127,85 @@ export function createBoard({
       status: 409,
     });
   }
+  // What the page and the MCP endpoint share.
+  const invalidate = () => {
+    cache = null;
+  };
+  async function overview(fresh) {
+    if (!cache || now() - cache.at > cacheMs || fresh)
+      cache = { at: now(), data: await loadBoard(github, labels) };
+    return {
+      project,
+      repo,
+      loadedAt: new Date(cache.at).toISOString(),
+      ...cache.data,
+      agent: relay
+        ? {
+            online: relay.online(),
+            agents: named.map((name) => ({
+              name,
+              online: relay.online(name),
+            })),
+            unnamed: "" in tokens,
+            features: relay.summary(),
+          }
+        : null,
+    };
+  }
+  // A command for the feature's agent: a message, an answer, take over.
+  async function command(issue, body) {
+    if (!relay)
+      throw Object.assign(new Error("Board chưa nối orchestrator"), {
+        status: 404,
+      });
+    const agent = await agentFor(issue);
+    relay.push(agent, { ...body, issue });
+    return { ok: true, agent, online: relay.online(agent) };
+  }
+  async function assign(issue, agent, actor) {
+    if (!named.length)
+      throw Object.assign(new Error("Board chưa có agent nào có tên"), {
+        status: 404,
+      });
+    if (!named.includes(agent))
+      throw Object.assign(new Error("Không có agent này"), { status: 400 });
+    const result = await assignAgent(github, issue, agent, actor);
+    // The old agent stops at once instead of on its next tracker pass.
+    if (result.before && result.before in tokens && result.changed)
+      relay.push(result.before, { type: "unassigned", issue });
+    invalidate();
+    return { agent, ...result };
+  }
+  async function decide(issue, action, note, actor) {
+    if (!["approve", "revise", "stop"].includes(action))
+      throw Object.assign(new Error("Hành động không hợp lệ"), { status: 400 });
+    const result = await applyAction(
+      github,
+      labels,
+      issue,
+      action,
+      note,
+      actor,
+    );
+    invalidate();
+    return result;
+  }
+  const mcp = createMcp({
+    token: mcpToken,
+    version,
+    board: {
+      github,
+      labels,
+      project,
+      repo,
+      overview,
+      invalidate,
+      session: (issue, after = 0) => relay?.view(issue, after) ?? null,
+      command,
+      assign: (issue, agent) => assign(issue, agent, mcpActor),
+      decide: (issue, action, note) => decide(issue, action, note, mcpActor),
+    },
+  });
   const failures = { count: 0, until: 0 };
   const send = (response, status, body, headers = {}) => {
     const json = typeof body !== "string";
@@ -146,6 +229,11 @@ export function createBoard({
       if (route === "GET /healthz") return send(response, 200, { ok: true });
       if (route === "GET /")
         return send(response, 200, await readFile(page, "utf8"));
+      // The owner's AI: its own bearer token, never the owner's cookie.
+      if (url.pathname === "/mcp") {
+        if (!mcp) return send(response, 404, { error: "Không có" });
+        return await mcp(request, response, { readJson, send });
+      }
       // The orchestrator's link: a bearer token, never the owner's cookie.
       if (url.pathname.startsWith("/api/agent/")) {
         if (!relay) return send(response, 404, { error: "Không có" });
@@ -222,31 +310,12 @@ export function createBoard({
         )
           return send(response, 403, { error: "Yêu cầu không hợp lệ" });
       }
-      if (route === "GET /api/board") {
-        if (
-          !cache ||
-          now() - cache.at > cacheMs ||
-          url.searchParams.has("fresh")
-        )
-          cache = { at: now(), data: await loadBoard(github, labels) };
-        return send(response, 200, {
-          project,
-          repo,
-          loadedAt: new Date(cache.at).toISOString(),
-          ...cache.data,
-          agent: relay
-            ? {
-                online: relay.online(),
-                agents: named.map((name) => ({
-                  name,
-                  online: relay.online(name),
-                })),
-                unnamed: "" in tokens,
-                features: relay.summary(),
-              }
-            : null,
-        });
-      }
+      if (route === "GET /api/board")
+        return send(
+          response,
+          200,
+          await overview(url.searchParams.has("fresh")),
+        );
       if (route === "POST /api/images") {
         // Base64 makes the request about a third larger than the image.
         const body = await readJson(
@@ -309,14 +378,14 @@ export function createBoard({
         if (request.method !== "POST")
           return send(response, 404, { error: "Không có" });
         const body = await readJson(request);
-        const agent = await agentFor(issue);
+        let sent;
         if (!chat[2]) {
           const text = String(body.text ?? "").trim();
           if (!text || text.length > 20_000)
             return send(response, 400, {
               error: "Cần nội dung tin nhắn (tối đa 20.000 ký tự)",
             });
-          relay.push(agent, { type: "message", issue, text });
+          sent = { type: "message", text };
         } else if (chat[2] === "answer") {
           const answers = Object.fromEntries(
             Object.entries(body.answers ?? {})
@@ -326,37 +395,20 @@ export function createBoard({
                 String(a).slice(0, 5000),
               ]),
           );
-          relay.push(agent, {
+          sent = {
             type: "answer",
-            issue,
             id: String(body.id ?? "").slice(0, 64),
             allow: body.allow !== false,
             answers,
             note: String(body.note ?? "").slice(0, 5000),
-          });
-        } else relay.push(agent, { type: chat[2], issue });
-        return send(response, 202, {
-          ok: true,
-          agent,
-          online: relay.online(agent),
-        });
+          };
+        } else sent = { type: chat[2] };
+        return send(response, 202, await command(issue, sent));
       }
-      const assign = url.pathname.match(/^\/api\/features\/(\d+)\/agent$/);
-      if (request.method === "POST" && assign) {
-        if (!named.length)
-          return send(response, 404, {
-            error: "Board chưa có agent nào có tên",
-          });
+      const pick = url.pathname.match(/^\/api\/features\/(\d+)\/agent$/);
+      if (request.method === "POST" && pick) {
         const { agent } = await readJson(request);
-        if (!named.includes(agent))
-          return send(response, 400, { error: "Không có agent này" });
-        const issue = Number(assign[1]);
-        const result = await assignAgent(github, issue, agent);
-        // The old agent stops at once instead of on its next tracker pass.
-        if (result.before && result.before in tokens && result.changed)
-          relay.push(result.before, { type: "unassigned", issue });
-        cache = null;
-        return send(response, 200, { agent, ...result });
+        return send(response, 200, await assign(Number(pick[1]), agent));
       }
       const comments = url.pathname.match(/^\/api\/features\/(\d+)\/comments$/);
       if (request.method === "GET" && comments)
@@ -368,17 +420,15 @@ export function createBoard({
       const action = url.pathname.match(/^\/api\/features\/(\d+)\/actions$/);
       if (request.method === "POST" && action) {
         const body = await readJson(request);
-        if (!["approve", "revise", "stop"].includes(body.action))
-          return send(response, 400, { error: "Hành động không hợp lệ" });
-        const result = await applyAction(
-          github,
-          labels,
-          Number(action[1]),
-          body.action,
-          String(body.note ?? "").slice(0, 5000),
+        return send(
+          response,
+          200,
+          await decide(
+            Number(action[1]),
+            body.action,
+            String(body.note ?? "").slice(0, 5000),
+          ),
         );
-        cache = null;
-        return send(response, 200, result);
       }
       if (route === "POST /api/features") {
         const body = await readJson(request);
@@ -393,7 +443,7 @@ export function createBoard({
           title,
           String(body.body ?? "").slice(0, 20_000),
         );
-        cache = null;
+        invalidate();
         return send(response, 201, created);
       }
       return send(response, 404, { error: "Không có" });
@@ -433,6 +483,18 @@ export function parseAgentTokens(text) {
   return tokens;
 }
 
+// BOARD_MCP_TOKEN lets the owner's AI run the board, so it is long and never
+// one of the agents' tokens.
+export function checkMcpToken(token = "", agentTokens = []) {
+  const value = String(token ?? "").trim();
+  if (!value) return "";
+  if (value.length < 32)
+    throw new Error("BOARD_MCP_TOKEN must be at least 32 characters");
+  if (agentTokens.includes(value))
+    throw new Error("BOARD_MCP_TOKEN must differ from every agent token");
+  return value;
+}
+
 export async function main(env = process.env) {
   const manifest = await readProject();
   if (manifest.tracker?.kind !== "github")
@@ -445,6 +507,10 @@ export async function main(env = process.env) {
   if (agentToken && agentToken.length < 32)
     throw new Error("AGENT_TOKEN must be at least 32 characters");
   const agentTokens = parseAgentTokens(env.AGENT_TOKENS ?? "");
+  const mcpToken = checkMcpToken(env.BOARD_MCP_TOKEN, [
+    agentToken,
+    ...Object.values(agentTokens),
+  ]);
   const repo = manifest.tracker.repo;
   const handle = createBoard({
     project: manifest.project.name,
@@ -456,6 +522,8 @@ export async function main(env = process.env) {
     github: createGitHub({ repo, token: env.GITHUB_TOKEN.trim() }),
     agentToken,
     agentTokens,
+    mcpToken,
+    version: String(manifest.core?.version ?? "0"),
   });
   const port = Number(env.PORT ?? 8080);
   createServer(handle).listen(port, env.HOST ?? "0.0.0.0", () =>

@@ -97,7 +97,7 @@ the task. Read it with `gh api "repos/<repo>/contents/images/<id>?ref=board-imag
 
 For new work, fetch `origin/master` and create the task worktree inside this
 issue's copy at `.symphony/task-worktrees/<issue-identifier>` on branch
-`codex/<issue-identifier>`. When resuming, reuse that path, branch and PR.
+`ai/<issue-identifier>`. When resuming, reuse that path, branch and PR.
 Run the verification listed in `AGENTS.md` that covers the change. If turns run
 out, leave a checkpoint in the workpad.
 

@@ -39,7 +39,7 @@ test("terminal archival retains untracked files and repairs a relocated nested G
       "synthetic initial commit",
     ]);
     const task = join(original, ".symphony/task-worktrees/task");
-    await git(["worktree", "add", "-b", "codex/archive-fixture", task]);
+    await git(["worktree", "add", "-b", "ai/archive-fixture", task]);
     await writeFile(join(task, "tracked.txt"), "retained modification\n");
     await writeFile(join(task, "untracked.txt"), "retained untracked work\n");
     await mkdir(join(original, "node_modules/cache"), { recursive: true });
@@ -80,7 +80,7 @@ test("terminal archival retains untracked files and repairs a relocated nested G
     const gitPointer = await readFile(join(relocated, ".git"), "utf8");
     assert.ok(gitPointer.includes(join(archived, ".git/worktrees/")));
     await git(
-      ["show-ref", "--verify", "refs/heads/codex/archive-fixture"],
+      ["show-ref", "--verify", "refs/heads/ai/archive-fixture"],
       archived,
     );
   } finally {
