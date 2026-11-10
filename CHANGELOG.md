@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0 (2026-11-10)
+
+- The board is an MCP server at `/mcp` (Streamable HTTP), so the owner's AI can run it:
+  read the board and each feature, add ideas, write plans, decide at every gate
+  (approve, revise, stop, including squash-merging a pull request), read a pull
+  request's diff and checks and review it, give features to agents, and message,
+  answer, take over or release their Claude sessions. Thirteen tools; see "The board as
+  an MCP server" in `docs/board.md` and ADR-0003.
+- It is off until `BOARD_MCP_TOKEN` (32+ characters, different from every agent token)
+  is set. The token works only on `/mcp`, and requests with an `Origin` header are
+  refused. Decisions made through it say so in their issue comment
+  ("AI của chủ dự án, qua MCP").
+- Task branches are named `ai/<task>` (and `ai/<issue-identifier>` for Symphony and the
+  orchestrator) instead of `codex/...`, in `template/AGENTS.md` and
+  `template/WORKFLOW.md`. Projects change the same lines in their own `AGENTS.md` and
+  `WORKFLOW.md`; branches already open keep their names.
+- Redeploy the board after syncing.
+
 ## 0.7.2 (2026-11-09)
 
 - The terminal command now opens the session with Remote Control on, named after the

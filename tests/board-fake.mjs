@@ -82,6 +82,11 @@ export function fakeGitHub() {
     ],
   };
   const writes = [];
+  const diffs = {
+    40:
+      "diff --git a/web/src/Detail.tsx b/web/src/Detail.tsx\n" +
+      "+x\n".repeat(30_000),
+  };
   const imageFiles = new Map();
   const sessionFiles = new Map();
   let imageBranch = false;
@@ -103,6 +108,37 @@ export function fakeGitHub() {
       const state = url.searchParams.get("state");
       return json(pulls.filter((p) => state === "all" || p.state === state));
     }
+    if (method === "GET" && (m = path.match(/^\/pulls\/(\d+)$/))) {
+      const pull = pulls.find((p) => p.number === Number(m[1]));
+      if (!pull) return json({}, 404);
+      if (init.headers.Accept === "application/vnd.github.diff")
+        return new Response(diffs[pull.number] ?? "");
+      return json({
+        user: { login: "agent-bot" },
+        base: { ref: "master" },
+        head: { ...pull.head, ref: `ai/pr-${pull.number}` },
+        mergeable: true,
+        ...pull,
+      });
+    }
+    if (method === "GET" && (m = path.match(/^\/pulls\/(\d+)\/files$/)))
+      return json(
+        Number(url.searchParams.get("page") ?? 1) > 1
+          ? []
+          : [
+              {
+                filename: "web/src/Detail.tsx",
+                status: "added",
+                additions: 3,
+                deletions: 0,
+              },
+            ],
+      );
+    if (method === "POST" && (m = path.match(/^\/pulls\/(\d+)\/reviews$/)))
+      return json(
+        { html_url: `https://github.com/example/demo-app/pull/${m[1]}#review` },
+        200,
+      );
     if (method === "GET" && (m = path.match(/^\/commits\/(\w+)\/check-runs$/)))
       return json({
         check_runs: [
@@ -199,5 +235,5 @@ export function fakeGitHub() {
     }
     return json({ message: "unexpected" }, 500);
   };
-  return { fetchImpl, issues, pulls, writes, imageFiles, sessionFiles };
+  return { fetchImpl, issues, pulls, writes, imageFiles, sessionFiles, diffs };
 }
