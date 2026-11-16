@@ -23,10 +23,13 @@ import {
   loadSession,
   loadWorkflowText,
   maxImageBytes,
+  milestoneNumber,
+  updateFeature,
   uploadImage,
 } from "./github.mjs";
 import { createMcp } from "./mcp.mjs";
 import { createRelay } from "./relay.mjs";
+import { loadTimeline } from "./timeline.mjs";
 import { callerOf, checkDistinct, checkToken, parseTokens } from "./tokens.mjs";
 
 const page = fileURLToPath(new URL("./index.html", import.meta.url));
@@ -491,6 +494,22 @@ export function createBoard({
           };
         } else sent = { type: chat[2] };
         return send(response, 202, await command(issue, sent));
+      }
+      if (route === "GET /api/timeline")
+        return send(response, 200, {
+          project,
+          repo,
+          ...(await loadTimeline(github, labels, now)),
+        });
+      const group = url.pathname.match(/^\/api\/features\/(\d+)\/milestone$/);
+      if (request.method === "POST" && group) {
+        // Required here: a number, or null to take the feature out.
+        const { milestone = NaN } = await readJson(request);
+        const result = await updateFeature(github, Number(group[1]), {
+          milestone: milestoneNumber(milestone),
+        });
+        invalidate();
+        return send(response, 200, result);
       }
       const pick = url.pathname.match(/^\/api\/features\/(\d+)\/agent$/);
       if (request.method === "POST" && pick) {

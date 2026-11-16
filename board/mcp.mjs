@@ -37,6 +37,7 @@ Typical loop: board_overview to see what waits; get_feature for one feature (it 
 Every decision leaves a comment on the issue that names you as the owner's AI. Merging and stopping cannot be undone from here: check CI and the diff first.
 A feature needs an agent (assign_agent) before it runs. Talk to its Claude session with message_agent, read it with agent_session, and answer its questions or approvals with answer_agent.
 You can also build a ready feature yourself: claim_feature gives it to you as "chat" (or "chat-<suffix>", to tell several chats apart) and returns the WORKFLOW.md prompt an agent would get; follow it and keep the Agent Workpad current. No orchestrator runs a chat's feature, and the board warns when its workpad stands still too long.
+Features can be grouped in GitHub milestones: board_overview lists them, and update_feature moves a feature into one (milestone number) or out (null).
 Write issue text, plans and notes in the language the project's issues already use.`;
 
 const fail = (message, status = 400) =>
@@ -89,7 +90,7 @@ function toolList(board) {
       name: "board_overview",
       title: "Board overview",
       description:
-        "Every open feature by column (and the latest closed ones), with priority, agent, the agent's session status, pending agent requests and the linked pull request's CI and preview. Start here.",
+        "Every open feature by column (and the latest closed ones), with priority, milestone, agent, the agent's session status, pending agent requests and the linked pull request's CI and preview, and the milestones that group features (due date, open and closed counts). Start here.",
       annotations: read,
       inputSchema: {
         type: "object",
@@ -159,7 +160,7 @@ function toolList(board) {
       name: "update_feature",
       title: "Edit a feature",
       description:
-        "Rewrites a feature's title or body (for example to write its plan before approving G2) and sets its priority. The body replaces the old one; read it first with get_feature. priority none removes it.",
+        "Rewrites a feature's title or body (for example to write its plan before approving G2), sets its priority and puts it in a milestone (its group; board_overview lists them). The body replaces the old one; read it first with get_feature. priority none removes the priority, milestone null takes the feature out of its milestone. Milestones themselves are created and dated on GitHub.",
       annotations: write(),
       inputSchema: {
         type: "object",
@@ -168,6 +169,11 @@ function toolList(board) {
           title: { type: "string", maxLength: 200 },
           body: { type: "string", maxLength: 60000 },
           priority: { type: "string", enum: [...priorities, "none"] },
+          milestone: {
+            type: ["integer", "null"],
+            minimum: 1,
+            description: "A milestone number, or null for none",
+          },
         },
         required: ["number"],
       },
@@ -181,6 +187,7 @@ function toolList(board) {
             title,
             body: text(args.body, "body", 60_000),
             priority: oneOf(args.priority, "priority", [...priorities, "none"]),
+            milestone: args.milestone,
           },
         );
         board.invalidate();
@@ -468,6 +475,7 @@ export function compact(data) {
           unnamed: data.agent.unnamed,
         }
       : null,
+    milestones: data.milestones ?? [],
     columns: data.columns.map((column) => ({
       id: column.id,
       title: column.title,
@@ -478,6 +486,7 @@ export function compact(data) {
           number: f.number,
           title: f.title,
           priority: f.priority,
+          milestone: f.milestone?.title ?? null,
           agent: f.agent,
           chat: f.chat ?? null,
           session: f.chat ? null : (sessions[f.number] ?? null),

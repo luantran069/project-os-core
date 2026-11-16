@@ -31,6 +31,25 @@ the commit on screen; if the agent has just pushed a new commit, GitHub rejects
 the merge and the board shows the error. "Stop" on Idea, Plan, In review and
 Blocked closes the issue (the work is dropped).
 
+## Milestones and the timeline
+
+A GitHub milestone groups features into one piece of product work (ADR-0007). Create
+milestones, and give them a due date, on GitHub (Issues → Milestones); the board reads
+them and puts features in them.
+
+- Each card shows its milestone. "Nhóm theo milestone" in the header splits every
+  column into one block per milestone: open milestones by nearest due date, then
+  closed ones, then "Chưa có nhóm". The browser remembers the choice.
+- The feature dialog has a milestone picker with the open milestones and "Không có".
+  The owner's AI does the same with `update_feature` (`milestone`: a number, or `null`).
+- The Timeline tab (`#timeline`) draws a Gantt chart from `GET /api/timeline`, which
+  reads every issue in a milestone, closed ones included, and the open issues without
+  one. A milestone's bar runs from its first feature's creation to its due date and
+  fills with its closed share; it has a dashed end when it has no due date and a red
+  edge when it is past due with open features. Click a milestone to show one bar per
+  feature, from creation to closing (or today), coloured by column. A red line marks
+  today. A bar starts at the issue's creation, not when work began.
+
 ## Images
 
 A new idea and a decision note both take images: paste, drop or choose a PNG, JPEG,
@@ -176,22 +195,22 @@ claude mcp add --transport http --scope user board https://<board domain>/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-| Tool                  | What it does                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| `board_overview`      | Features by column with priority, agent, session status, pending requests, PR checks, preview    |
-| `get_feature`         | One feature: body, labels, stage, the decisions its column allows, comments, PR, session state   |
-| `create_idea`         | A new issue in Idea, with an optional priority                                                   |
-| `update_feature`      | Rewrite the title or body (write the plan), set or clear the priority                            |
-| `comment_feature`     | Comment on the issue                                                                             |
-| `decide`              | The board's buttons: `approve`, `revise` (needs a note), `stop`, with the same effect per column |
-| `get_pull_request`    | A PR's description, check runs, changed files and diff, in 60,000-character windows              |
-| `review_pull_request` | A GitHub review (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`) at the PR's head                       |
-| `assign_agent`        | Give the feature to a named agent, or to the owner's chat (`chat`, `chat-<suffix>`)              |
-| `claim_feature`       | Take a `ready` feature to build in this chat; returns the WORKFLOW.md prompt                     |
-| `agent_session`       | The session's status, pending questions and approvals, workspace, session id and new events      |
-| `message_agent`       | Send the session a message                                                                       |
-| `answer_agent`        | Allow or refuse an approval, or answer a question                                                |
-| `control_agent`       | `takeover` or `release` the session                                                              |
+| Tool                  | What it does                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `board_overview`      | Features by column with priority, milestone, agent, session status, pending requests, PR checks, preview; the milestones |
+| `get_feature`         | One feature: body, labels, stage, the decisions its column allows, comments, PR, session state                           |
+| `create_idea`         | A new issue in Idea, with an optional priority                                                                           |
+| `update_feature`      | Rewrite the title or body (write the plan), set or clear the priority, move it to a milestone                            |
+| `comment_feature`     | Comment on the issue                                                                                                     |
+| `decide`              | The board's buttons: `approve`, `revise` (needs a note), `stop`, with the same effect per column                         |
+| `get_pull_request`    | A PR's description, check runs, changed files and diff, in 60,000-character windows                                      |
+| `review_pull_request` | A GitHub review (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`) at the PR's head                                               |
+| `assign_agent`        | Give the feature to a named agent, or to the owner's chat (`chat`, `chat-<suffix>`)                                      |
+| `claim_feature`       | Take a `ready` feature to build in this chat; returns the WORKFLOW.md prompt                                             |
+| `agent_session`       | The session's status, pending questions and approvals, workspace, session id and new events                              |
+| `message_agent`       | Send the session a message                                                                                               |
+| `answer_agent`        | Allow or refuse an approval, or answer a question                                                                        |
+| `control_agent`       | `takeover` or `release` the session                                                                                      |
 
 The token carries the owner's full power on the board: `decide` with `approve` on a
 feature in review squash-merges its pull request, and `stop` closes features. The board

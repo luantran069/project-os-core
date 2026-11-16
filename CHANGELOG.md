@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.12.0 (2026-11-16)
+
+- GitHub milestones group features, and a Timeline tab draws them (ADR-0007). Cards
+  show their milestone, and "Nhóm theo milestone" splits every column into one block
+  per milestone (nearest due date first, "Chưa có nhóm" last); the browser remembers
+  it.
+- The Timeline tab (`#timeline`, `GET /api/timeline`) is a Gantt chart: one bar per
+  milestone from its first feature's creation to its due date, filled by its closed
+  share, open-ended without a due date and marked when past due with open features.
+  Expanding a milestone shows a bar per feature (creation to closing, or today)
+  coloured by column; open features without a milestone have their own row. It reads
+  every issue in a milestone, closed ones included, so it is not limited to the
+  board's 20 latest closed features. `board/timeline.mjs` builds the rows.
+- The feature dialog moves a feature into an open milestone or out of it
+  (`POST /api/features/<n>/milestone`). Over MCP, `update_feature` takes `milestone`
+  (a number, or `null`), `board_overview` lists the milestones and each feature's
+  milestone, and `get_feature` returns it.
+- `loadBoard` returns `milestones` and each feature's `milestone`, `created` and
+  `closed`. The page's `el()` now flattens nested child lists.
+- Milestones are still created and dated on GitHub. To adopt: sync and redeploy the
+  board; no `project.yaml` change.
+
 ## 0.11.0 (2026-11-10)
 
 - The owner's chat can build a feature itself (ADR-0006, from happy-clink's ADR-0010). A

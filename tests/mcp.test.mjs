@@ -245,6 +245,38 @@ test("the AI turns an idea into a plan and passes G1 and G2", () =>
     );
   }));
 
+test("the AI sees the milestones and moves a feature between them", () =>
+  withMcp(async ({ tool, fake }) => {
+    const board = await tool("board_overview");
+    assert.deepEqual(
+      board.milestones.map((m) => [m.number, m.title, m.due, m.open, m.closed]),
+      [
+        [1, "Báo cáo quỹ", "2026-12-01T08:00:00Z", 2, 1],
+        [2, "Tài khoản", null, 0, 0],
+      ],
+    );
+    const plan = board.columns.find((c) => c.id === "plan").features[0];
+    assert.equal(plan.milestone, "Báo cáo quỹ");
+    assert.equal(board.columns[0].features[0].milestone, null);
+
+    await tool("update_feature", { number: 1, milestone: 2 });
+    assert.equal(fake.issues[0].milestone.number, 2);
+    assert.equal(
+      (await tool("get_feature", { number: 1 })).milestone.title,
+      "Tài khoản",
+    );
+    await tool("update_feature", { number: 1, milestone: null });
+    assert.equal(fake.issues[0].milestone, null);
+    assert.match(
+      (await tool("update_feature", { number: 1, milestone: "2" })).error,
+      /milestone/,
+    );
+    assert.match(
+      (await tool("update_feature", { number: 1, milestone: 9 })).error,
+      /Không có milestone #9/,
+    );
+  }));
+
 test("the AI reviews a pull request and merges it at its head", () =>
   withMcp(async ({ tool, fake }) => {
     const first = await tool("get_pull_request", { feature: 4 });
