@@ -15,6 +15,33 @@ export const labels = {
 export function fakeGitHub() {
   const label = (name) => ({ name });
   const at = "2026-10-30T10:00:00Z";
+  const milestones = [
+    {
+      number: 1,
+      title: "Báo cáo quỹ",
+      description: "So sánh và biểu đồ",
+      state: "open",
+      due_on: "2026-12-01T08:00:00Z",
+      created_at: "2026-10-01T00:00:00Z",
+      closed_at: null,
+      open_issues: 2,
+      closed_issues: 1,
+    },
+    {
+      number: 2,
+      title: "Tài khoản",
+      description: "",
+      state: "open",
+      due_on: null,
+      created_at: "2026-10-02T00:00:00Z",
+      closed_at: null,
+      open_issues: 0,
+      closed_issues: 0,
+    },
+  ].map((milestone) => ({
+    html_url: `https://github.com/example/demo-app/milestone/${milestone.number}`,
+    ...milestone,
+  }));
   const issues = [
     {
       number: 1,
@@ -28,12 +55,16 @@ export function fakeGitHub() {
       state: "open",
       labels: [label(labels.plan), label("priority-now")],
       body: "## Kế hoạch\n- [ ] Bảng so sánh\n- [ ] Xuất CSV",
+      created_at: "2026-10-12T00:00:00Z",
+      milestone: milestones[0],
     },
     {
       number: 3,
       title: "Thêm biểu đồ dòng tiền",
       state: "open",
       labels: [label(labels.ready), label(labels.in_progress)],
+      created_at: "2026-10-15T00:00:00Z",
+      milestone: milestones[0],
     },
     {
       number: 4,
@@ -47,10 +78,21 @@ export function fakeGitHub() {
       state: "open",
       labels: [label(labels.blocked)],
     },
-    { number: 6, title: "Chuyển ngôn ngữ", state: "closed", labels: [] },
+    {
+      number: 6,
+      title: "Chuyển ngôn ngữ",
+      state: "closed",
+      labels: [],
+      created_at: "2026-10-05T00:00:00Z",
+      closed_at: "2026-10-25T00:00:00Z",
+      milestone: milestones[0],
+    },
   ].map((issue) => ({
     body: "",
     comments: 0,
+    created_at: "2026-10-20T10:00:00Z",
+    closed_at: null,
+    milestone: null,
     updated_at: at,
     html_url: `https://github.com/example/demo-app/issues/${issue.number}`,
     ...issue,
@@ -109,8 +151,31 @@ export function fakeGitHub() {
     let m;
     if (method === "GET" && path === "/issues") {
       const state = url.searchParams.get("state");
+      const milestone = url.searchParams.get("milestone");
       const page = Number(url.searchParams.get("page") ?? 1);
-      return json(page > 1 ? [] : issues.filter((i) => i.state === state));
+      const inMilestone = (i) =>
+        milestone === null ||
+        (milestone === "*"
+          ? i.milestone !== null
+          : milestone === "none"
+            ? i.milestone === null
+            : i.milestone?.number === Number(milestone));
+      return json(
+        page > 1
+          ? []
+          : issues.filter(
+              (i) => (state === "all" || i.state === state) && inMilestone(i),
+            ),
+      );
+    }
+    if (method === "GET" && path === "/milestones") {
+      const state = url.searchParams.get("state");
+      const page = Number(url.searchParams.get("page") ?? 1);
+      return json(
+        page > 1
+          ? []
+          : milestones.filter((m) => state === "all" || m.state === state),
+      );
     }
     if (method === "GET" && path === "/pulls") {
       const state = url.searchParams.get("state");
@@ -160,7 +225,15 @@ export function fakeGitHub() {
     if ((m = path.match(/^\/issues\/(\d+)$/))) {
       const issue = issues.find((i) => i.number === Number(m[1]));
       if (!issue) return json({}, 404);
-      if (method === "PATCH") Object.assign(issue, body);
+      if (method === "PATCH") {
+        const { milestone, ...rest } = body;
+        if (milestone !== undefined) {
+          const found = milestones.find((m) => m.number === milestone);
+          if (milestone !== null && !found) return json({}, 422);
+          issue.milestone = found ?? null;
+        }
+        Object.assign(issue, rest);
+      }
       return json(issue);
     }
     if (method === "GET" && (m = path.match(/^\/issues\/(\d+)\/comments$/)))
@@ -260,6 +333,7 @@ export function fakeGitHub() {
   return {
     fetchImpl,
     issues,
+    milestones,
     pulls,
     writes,
     comments,

@@ -181,6 +181,95 @@ test("the board shows each feature in its column with PR, CI and preview", () =>
     assert.equal(comments.body[0].workpad, true);
   }));
 
+test("the board lists milestones and each feature's milestone and dates", () =>
+  withBoard(async ({ call }) => {
+    await call("/api/login", { body: { password } });
+    const { body } = await call("/api/board");
+    assert.deepEqual(body.milestones, [
+      {
+        number: 1,
+        title: "Báo cáo quỹ",
+        description: "So sánh và biểu đồ",
+        state: "open",
+        due: "2026-12-01T08:00:00Z",
+        open: 2,
+        closed: 1,
+        url: "https://github.com/example/demo-app/milestone/1",
+      },
+      {
+        number: 2,
+        title: "Tài khoản",
+        description: "",
+        state: "open",
+        due: null,
+        open: 0,
+        closed: 0,
+        url: "https://github.com/example/demo-app/milestone/2",
+      },
+    ]);
+    const by = Object.fromEntries(body.features.map((f) => [f.number, f]));
+    assert.deepEqual(by[2].milestone, {
+      number: 1,
+      title: "Báo cáo quỹ",
+      due: "2026-12-01T08:00:00Z",
+    });
+    assert.equal(by[1].milestone, null);
+    assert.equal(by[2].created, "2026-10-12T00:00:00Z");
+    assert.equal(by[2].closed, null);
+    assert.equal(by[6].closed, "2026-10-25T00:00:00Z");
+  }));
+
+test("the timeline has every issue of each milestone and the open ones without", () =>
+  withBoard(async ({ call }) => {
+    assert.equal((await call("/api/timeline")).status, 401);
+    await call("/api/login", { body: { password } });
+    const { status, body } = await call("/api/timeline");
+    assert.equal(status, 200);
+    assert.equal(body.project, "Demo");
+    assert.deepEqual(
+      body.groups.map((g) => [g.number, g.features.map((f) => f.number)]),
+      [
+        [1, [6, 2, 3]],
+        [2, []],
+      ],
+    );
+    assert.equal(body.groups[0].features[0].stage, "done");
+    assert.deepEqual(
+      body.ungrouped.map((f) => f.number),
+      [1, 4, 5],
+    );
+    assert.match(body.today, /^\d{4}-\d{2}-\d{2}T/);
+  }));
+
+test("a feature moves to a milestone, out of it, and not to one that does not exist", () =>
+  withBoard(async ({ call, fake }) => {
+    await call("/api/login", { body: { password } });
+    const moved = await call("/api/features/1/milestone", {
+      body: { milestone: 2 },
+    });
+    assert.equal(moved.status, 200);
+    assert.deepEqual(moved.body, { number: 1, updated: ["milestone"] });
+    assert.equal(fake.issues[0].milestone.number, 2);
+    const board = await call("/api/board");
+    assert.equal(
+      board.body.features.find((f) => f.number === 1).milestone.title,
+      "Tài khoản",
+    );
+    await call("/api/features/1/milestone", { body: { milestone: null } });
+    assert.equal(fake.issues[0].milestone, null);
+    for (const milestone of [0, -1, 1.5, "2", undefined])
+      assert.equal(
+        (await call("/api/features/1/milestone", { body: { milestone } }))
+          .status,
+        400,
+      );
+    assert.equal(
+      (await call("/api/features/1/milestone", { body: { milestone: 9 } }))
+        .status,
+      422,
+    );
+  }));
+
 test("approving a plan makes it ready and leaves an audit comment", () =>
   withBoard(async ({ call, fake }) => {
     await call("/api/login", { body: { password } });

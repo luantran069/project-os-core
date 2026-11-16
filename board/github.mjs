@@ -352,12 +352,13 @@ export async function loadBoard(
   labels,
   { closedLimit = 20, staleHours = defaultStaleHours, now = Date.now } = {},
 ) {
-  const [open, closed, pulls] = await Promise.all([
+  const [open, closed, pulls, milestones] = await Promise.all([
     gh.pages(`${gh.base}/issues?state=open&sort=updated&direction=desc`),
     gh.request(
       `${gh.base}/issues?state=closed&sort=updated&direction=desc&per_page=${closedLimit}`,
     ),
     gh.pages(`${gh.base}/pulls?state=all&sort=updated&direction=desc`, 1),
+    loadMilestones(gh),
   ]);
   const issues = [...open, ...closed].filter((issue) => !issue.pull_request);
   const byIssue = new Map();
@@ -388,6 +389,9 @@ export async function loadBoard(
         agent,
         chat,
         labels: (issue.labels ?? []).map((label) => label.name),
+        milestone: milestoneOf(issue),
+        created: issue.created_at,
+        closed: issue.closed_at ?? null,
         updated: issue.updated_at,
         comments: issue.comments ?? 0,
         pull:
@@ -403,7 +407,42 @@ export async function loadBoard(
       };
     }),
   );
-  return { columns, features };
+  return { columns, features, milestones: milestones.map(milestoneSummary) };
+}
+
+// Milestones group features (ADR-0007): open and closed, the nearest due first.
+export const loadMilestones = (gh) =>
+  gh.pages(`${gh.base}/milestones?state=all&sort=due_on&direction=asc`);
+
+export const milestoneOf = (issue) =>
+  issue.milestone
+    ? {
+        number: issue.milestone.number,
+        title: issue.milestone.title,
+        due: issue.milestone.due_on ?? null,
+      }
+    : null;
+
+const milestoneSummary = (milestone) => ({
+  number: milestone.number,
+  title: milestone.title,
+  description: milestone.description ?? "",
+  state: milestone.state,
+  due: milestone.due_on ?? null,
+  open: milestone.open_issues ?? 0,
+  closed: milestone.closed_issues ?? 0,
+  url: milestone.html_url,
+});
+
+// A milestone number, or null to take the feature out of its milestone.
+export function milestoneNumber(value) {
+  if (value === null) return null;
+  if (!Number.isInteger(value) || value <= 0)
+    throw Object.assign(
+      new Error("milestone phải là số milestone (số nguyên dương) hoặc null"),
+      { status: 400 },
+    );
+  return value;
 }
 
 export async function loadComments(gh, number) {
@@ -740,16 +779,25 @@ export async function createIdea(gh, labels, title, body = "", priority) {
 
 // Rewrites a feature's title or body (a plan, say) and sets its priority;
 // "none" removes it. GitHub keeps the body's edit history.
-export async function updateFeature(gh, number, { title, body, priority }) {
+export async function updateFeature(
+  gh,
+  number,
+  { title, body, priority, milestone },
+) {
   const issue = await loadFeature(gh, number);
   const patch = {};
   if (title !== undefined) patch.title = title;
   if (body !== undefined) patch.body = body;
+  if (milestone !== undefined) patch.milestone = milestoneNumber(milestone);
   if (Object.keys(patch).length)
-    await gh.request(`${gh.base}/issues/${number}`, {
-      method: "PATCH",
-      body: patch,
-    });
+    await gh
+      .request(`${gh.base}/issues/${number}`, { method: "PATCH", body: patch })
+      .catch((error) => {
+        // GitHub answers 422 for a milestone number it does not have.
+        if (error.status === 422 && "milestone" in patch)
+          error.message = `Không có milestone #${patch.milestone}`;
+        throw error;
+      });
   if (priority !== undefined) {
     for (const label of issue.labels ?? [])
       if (priorityOf({ labels: [label] }))
@@ -818,6 +866,7 @@ export async function loadFeatureDetails(
       ? chatHold(agent, stage, comments, { staleHours, now: now() })
       : null,
     labels: (issue.labels ?? []).map((label) => label.name),
+    milestone: milestoneOf(issue),
     body: issue.body ?? "",
     actions: ["approve", "revise", "stop"]
       .map((action) => ({ action, plan: planAction(stage, action, labels) }))

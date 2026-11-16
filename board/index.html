@@ -7,6 +7,7 @@
     <title>Board dự án</title>
     <style>
       :root {
+        color-scheme: light dark;
         --bg: #f6f7f9;
         --panel: #ffffff;
         --text: #1b1f24;
@@ -708,7 +709,197 @@
         display: grid;
         gap: 10px;
       }
+      .views {
+        display: flex;
+        gap: 4px;
+      }
+      .views button[aria-pressed="true"],
+      button.toggle[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .chip.milestone {
+        color: var(--accent);
+      }
+      .group {
+        margin-bottom: 12px;
+      }
+      .group h3 {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 0 0 6px;
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        overflow-wrap: anywhere;
+      }
+      .group h3 .count {
+        margin-left: auto;
+        font-weight: normal;
+      }
+      .timeline-view {
+        padding: 16px;
+      }
+      .tl-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 10px;
+        align-items: center;
+      }
+      .tl-legend .swatch {
+        display: inline-block;
+        width: 12px;
+        height: 8px;
+        border-radius: 2px;
+        margin-right: 4px;
+      }
+      .tl-scroll {
+        overflow-x: auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .tl {
+        position: relative;
+        --label: 240px;
+      }
+      .tl-row {
+        display: flex;
+        border-bottom: 1px solid var(--line);
+        min-height: 34px;
+      }
+      .tl-row:last-of-type {
+        border-bottom: 0;
+      }
+      .tl-label {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        width: var(--label);
+        flex-shrink: 0;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        padding: 6px 10px;
+        font-size: 13px;
+        overflow: hidden;
+      }
+      .tl-label .name {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tl-label .meta {
+        gap: 4px;
+      }
+      .tl-group > .tl-label {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .tl-feature > .tl-label {
+        padding-left: 24px;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .tl-track {
+        position: relative;
+        flex-shrink: 0;
+      }
+      .tl-axis {
+        min-height: 28px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .tl-tick {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-left: 1px solid var(--line);
+        padding: 6px 0 0 4px;
+        white-space: nowrap;
+      }
+      .tl-tick.month {
+        border-left-color: var(--muted);
+        color: var(--text);
+      }
+      .tl-bar {
+        position: absolute;
+        top: 9px;
+        height: 16px;
+        min-width: 4px;
+        border-radius: 4px;
+        background: var(--chip);
+        border: 1px solid var(--line);
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .tl-bar .fill {
+        height: 100%;
+        background: var(--accent);
+        opacity: 0.75;
+      }
+      .tl-bar.open-ended {
+        border-right-style: dashed;
+        border-right-color: var(--muted);
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .tl-bar.overdue {
+        border-color: var(--bad);
+      }
+      .tl-bar.feature {
+        top: 11px;
+        height: 12px;
+        border: 0;
+      }
+      .tl-today {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        border-left: 2px solid var(--bad);
+        pointer-events: none;
+        z-index: 0;
+      }
+      .tl-empty {
+        padding: 16px;
+        color: var(--muted);
+      }
+      .stage-idea {
+        background: var(--muted);
+      }
+      .stage-plan {
+        background: #8a63d2;
+      }
+      .stage-ready {
+        background: #4f9bd9;
+      }
+      .stage-running {
+        background: var(--accent);
+      }
+      .stage-review {
+        background: var(--warn);
+      }
+      .stage-blocked {
+        background: var(--bad);
+      }
+      .stage-done {
+        background: var(--ok);
+      }
       @media (max-width: 720px) {
+        .tl {
+          --label: 150px;
+        }
+        header {
+          flex-wrap: wrap;
+        }
+        header h1 {
+          flex-basis: 100%;
+        }
         .tabs {
           display: flex;
         }
@@ -727,7 +918,28 @@
     <div id="app"></div>
     <script>
       const app = document.getElementById("app");
-      const state = { data: null, active: "plan" };
+      // The browser may refuse storage (private windows); the board works without.
+      const stored = {
+        get: (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        },
+        set: (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch {}
+        },
+      };
+      const state = {
+        data: null,
+        active: "plan",
+        grouped: stored.get("board.grouped") === "1",
+        timeline: null,
+        expanded: null,
+      };
       const checkText = {
         success: "CI đạt",
         failure: "CI lỗi",
@@ -745,7 +957,7 @@
           else if (value !== undefined && value !== null)
             node.setAttribute(key, value);
         }
-        for (const child of children.flat())
+        for (const child of children.flat(Infinity))
           if (child !== null && child !== undefined && child !== false)
             node.append(child instanceof Node ? child : String(child));
         return node;
@@ -946,6 +1158,13 @@
             feature.priority
               ? el("span", { class: "chip" }, feature.priority.toUpperCase())
               : null,
+            feature.milestone && !state.grouped
+              ? el(
+                  "span",
+                  { class: "chip milestone", title: "Milestone" },
+                  feature.milestone.title,
+                )
+              : null,
             agentChip(feature),
             pull
               ? el(
@@ -994,6 +1213,11 @@
             ),
           ),
         );
+        const groups = milestoneOrder();
+        const content = (column) =>
+          state.grouped
+            ? groupBlocks(byColumn[column.id], groups, column)
+            : byColumn[column.id].map((feature) => card(feature, column));
         const board = el(
           "main",
           { class: "board" },
@@ -1007,18 +1231,121 @@
                 el("span", {}, column.title),
                 el("span", {}, byColumn[column.id].length),
               ),
-              byColumn[column.id].map((feature) => card(feature, column)),
+              content(column),
             ),
           ),
         );
-        const header = el(
+        const toggle = el(
+          "button",
+          {
+            class: "toggle",
+            "aria-pressed": String(state.grouped),
+            title: "Chia mỗi cột theo milestone",
+            onclick: () => {
+              state.grouped = !state.grouped;
+              stored.set("board.grouped", state.grouped ? "1" : "0");
+              render();
+            },
+          },
+          "Nhóm theo milestone",
+        );
+        app.replaceChildren(header("board", toggle), tabs, board);
+      }
+
+      const day = 86_400_000;
+      // Day and month, as 01/12.
+      const dateText = (iso) => {
+        if (!iso) return "";
+        const date = new Date(iso);
+        const two = (n) => String(n).padStart(2, "0");
+        return `${two(date.getDate())}/${two(date.getMonth() + 1)}`;
+      };
+
+      // Milestones for grouping: open ones by nearest due date (none last),
+      // then closed ones; any milestone a feature names is kept.
+      function milestoneOrder() {
+        const list = [...(state.data.milestones ?? [])];
+        for (const feature of state.data.features)
+          if (
+            feature.milestone &&
+            !list.some((m) => m.number === feature.milestone.number)
+          )
+            list.push({ ...feature.milestone, state: "open" });
+        const due = (m) => (m.due ? Date.parse(m.due) : Infinity);
+        return list.sort(
+          (a, b) =>
+            (a.state === "closed") - (b.state === "closed") ||
+            due(a) - due(b) ||
+            a.title.localeCompare(b.title),
+        );
+      }
+
+      function groupBlocks(features, groups, column) {
+        const block = (title, due, list) =>
+          list.length
+            ? el(
+                "div",
+                { class: "group" },
+                el(
+                  "h3",
+                  {},
+                  el("span", {}, title),
+                  due ? el("span", {}, `hạn ${dateText(due)}`) : null,
+                  el("span", { class: "count" }, list.length),
+                ),
+                list.map((feature) => card(feature, column)),
+              )
+            : null;
+        return [
+          ...groups.map((m) =>
+            block(
+              m.title,
+              m.due,
+              features.filter((f) => f.milestone?.number === m.number),
+            ),
+          ),
+          block(
+            "Chưa có nhóm",
+            null,
+            features.filter((f) => !f.milestone),
+          ),
+        ];
+      }
+
+      // The header both tabs share. `extra` goes before the add and reload buttons.
+      function header(view, ...extra) {
+        const tab = (id, label, hash) =>
+          el(
+            "button",
+            {
+              "aria-pressed": String(view === id),
+              onclick: () => {
+                if (view !== id) location.hash = hash;
+              },
+            },
+            label,
+          );
+        return el(
           "header",
           {},
-          el("h1", {}, data.project),
+          el("h1", {}, state.data?.project ?? ""),
+          el(
+            "nav",
+            { class: "views", "aria-label": "Chế độ xem" },
+            tab("board", "Board", ""),
+            tab("timeline", "Timeline", "timeline"),
+          ),
+          ...extra,
           el("button", { onclick: newIdea }, "+ Ý tưởng"),
-          el("button", { onclick: () => load(true), title: "Tải lại" }, "↻"),
+          el(
+            "button",
+            {
+              onclick: () => load(true),
+              title: "Tải lại",
+            },
+            "↻",
+          ),
         );
-        app.replaceChildren(header, tabs, board);
       }
 
       const buttons = {
@@ -1718,6 +2045,62 @@
         };
       }
 
+      // Puts the feature in an open milestone or takes it out. Milestones are
+      // created and dated on GitHub (ADR-0007).
+      function milestonePicker(feature) {
+        const current = feature.milestone?.number ?? null;
+        const choices = milestoneOrder().filter(
+          (m) => m.state !== "closed" || m.number === current,
+        );
+        const status = el("span", {});
+        const select = el(
+          "select",
+          { "aria-label": "Milestone" },
+          el("option", { value: "" }, "Không có"),
+          choices.map((m) =>
+            el(
+              "option",
+              {
+                value: String(m.number),
+                ...(m.number === current ? { selected: "" } : {}),
+              },
+              m.due ? `${m.title} (hạn ${dateText(m.due)})` : m.title,
+            ),
+          ),
+        );
+        select.addEventListener("change", async () => {
+          const milestone = select.value ? Number(select.value) : null;
+          select.disabled = true;
+          status.textContent = "Đang lưu…";
+          try {
+            await call(`/api/features/${feature.number}/milestone`, {
+              milestone,
+            });
+            feature.milestone =
+              choices.find((m) => m.number === milestone) ?? null;
+            status.textContent = "Đã lưu";
+            load(true);
+          } catch (e) {
+            status.textContent = e.message;
+            select.value = current === null ? "" : String(current);
+          }
+          select.disabled = false;
+        });
+        return el(
+          "p",
+          { class: "meta" },
+          el("label", {}, "Milestone ", select),
+          status,
+          choices.length
+            ? null
+            : el(
+                "span",
+                {},
+                "(chưa có milestone: tạo trên GitHub, Issues → Milestones)",
+              ),
+        );
+      }
+
       function openFeature(feature, column) {
         const dialog = el("dialog", { class: "feature" });
         const error = el("div", { class: "error" });
@@ -1805,6 +2188,7 @@
                 "Mở trên GitHub",
               ),
             ),
+            milestonePicker(feature),
             pull
               ? el(
                   "p",
@@ -1952,13 +2336,256 @@
         title.focus();
       }
 
-      async function load(fresh = false) {
+      const stageText = {
+        idea: "Ý tưởng",
+        plan: "Kế hoạch",
+        ready: "Sẵn sàng",
+        running: "Đang làm",
+        review: "Chờ duyệt",
+        blocked: "Bị chặn",
+        done: "Xong",
+      };
+
+      // Opens a timeline bar's feature: in the board's dialog when the board has
+      // it, or on GitHub for older closed ones the board does not keep.
+      function openTimelineFeature(bar) {
+        const feature = state.data?.features.find(
+          (f) => f.number === bar.number,
+        );
+        const column = state.data?.columns.find((c) => c.id === feature?.stage);
+        if (feature && column) openFeature(feature, column);
+        else if (safeUrl(bar.url)) window.open(safeUrl(bar.url), "_blank");
+      }
+
+      function renderTimeline() {
+        const timeline = state.timeline;
+        const view = el("main", { class: "timeline-view" });
+        app.replaceChildren(header("timeline"), view);
+        if (!timeline) {
+          view.append(el("p", {}, "Đang tải timeline…"));
+          return;
+        }
+        // Open milestones start expanded, closed ones and "no milestone" folded.
+        state.expanded ??= new Set(
+          timeline.groups
+            .filter((g) => g.state !== "closed")
+            .map((g) => g.number),
+        );
+        const px = 8; // per day
+        const first = new Date(Date.parse(timeline.start) - 3 * day);
+        first.setUTCHours(0, 0, 0, 0);
+        first.setUTCDate(first.getUTCDate() - ((first.getUTCDay() + 6) % 7));
+        const from = first.getTime();
+        const to = Date.parse(timeline.end) + 14 * day;
+        const width = Math.ceil((to - from) / day) * px;
+        const x = (iso) => ((Date.parse(iso) - from) / day) * px;
+        const span = (start, end) => ({
+          left: x(start),
+          width: Math.max(4, x(end) - x(start)),
+        });
+        const place = (node, { left, width: w }) => {
+          node.style.left = `${left}px`;
+          node.style.width = `${w}px`;
+          return node;
+        };
+        const track = (...children) => {
+          const node = el("div", { class: "tl-track" }, ...children);
+          node.style.width = `${width}px`;
+          return node;
+        };
+        const ticks = [];
+        for (let t = from; t <= to; t += 7 * day) {
+          const date = new Date(t);
+          const month = date.getUTCDate() <= 7;
+          const tick = el(
+            "div",
+            { class: `tl-tick${month ? " month" : ""}` },
+            month
+              ? `${date.getUTCMonth() + 1}/${date.getUTCFullYear()}`
+              : dateText(date.toISOString()),
+          );
+          tick.style.left = `${x(date.toISOString())}px`;
+          ticks.push(tick);
+        }
+        const featureRow = (bar) =>
+          el(
+            "div",
+            { class: "tl-row tl-feature" },
+            el(
+              "div",
+              {
+                class: "tl-label",
+                tabindex: "0",
+                title: `#${bar.number} ${bar.title}`,
+                onclick: () => openTimelineFeature(bar),
+                onkeydown: (e) => e.key === "Enter" && openTimelineFeature(bar),
+              },
+              el("span", { class: "name" }, `#${bar.number} ${bar.title}`),
+            ),
+            track(
+              place(
+                el("div", {
+                  class: `tl-bar feature stage-${bar.stage}`,
+                  title: `#${bar.number} ${bar.title} · ${stageText[bar.stage] ?? bar.stage} · ${dateText(bar.start)} → ${bar.stage === "done" ? dateText(bar.end) : "nay"}`,
+                  onclick: () => openTimelineFeature(bar),
+                }),
+                span(bar.start, bar.end),
+              ),
+            ),
+          );
+        const toggle = (key) => {
+          if (state.expanded.has(key)) state.expanded.delete(key);
+          else state.expanded.add(key);
+          renderTimeline();
+        };
+        const groupRow = (key, title, meta, bar, features) => {
+          const open = state.expanded.has(key);
+          return [
+            el(
+              "div",
+              { class: "tl-row tl-group" },
+              el(
+                "div",
+                {
+                  class: "tl-label",
+                  tabindex: "0",
+                  role: "button",
+                  "aria-expanded": String(open),
+                  onclick: () => toggle(key),
+                  onkeydown: (e) => e.key === "Enter" && toggle(key),
+                },
+                el("span", { class: "name" }, `${open ? "▾" : "▸"} ${title}`),
+                el("span", { class: "meta" }, meta),
+              ),
+              track(bar),
+            ),
+            open ? features.map(featureRow) : [],
+          ];
+        };
+        const rows = timeline.groups.map((group) => {
+          const done = Math.round(group.progress * 100);
+          const bar = place(
+            el(
+              "div",
+              {
+                class: `tl-bar${group.openEnded ? " open-ended" : ""}${group.overdue ? " overdue" : ""}`,
+                title: `${group.title} · ${group.closed}/${group.open + group.closed} xong · ${group.due ? `hạn ${dateText(group.due)}` : "chưa có hạn"}`,
+                onclick: () => toggle(group.number),
+              },
+              el("div", { class: "fill", style: `width:${done}%` }),
+            ),
+            span(group.start, group.end),
+          );
+          return groupRow(
+            group.number,
+            group.title,
+            [
+              `${group.closed}/${group.open + group.closed} xong`,
+              group.due ? ` · hạn ${dateText(group.due)}` : " · chưa có hạn",
+              group.overdue ? " · trễ hạn" : "",
+              group.state === "closed" ? " · đã đóng" : "",
+            ].join(""),
+            bar,
+            group.features,
+          );
+        });
+        if (timeline.ungrouped.length)
+          rows.push(
+            groupRow(
+              "none",
+              "Chưa có nhóm",
+              `${timeline.ungrouped.length} đang mở`,
+              null,
+              timeline.ungrouped,
+            ),
+          );
+        const today = el("div", { class: "tl-today", title: "Hôm nay" });
+        const chart = el(
+          "div",
+          { class: "tl" },
+          today,
+          el(
+            "div",
+            { class: "tl-row tl-axis" },
+            el("div", { class: "tl-label" }),
+            track(ticks),
+          ),
+          rows,
+        );
+        const legend = el(
+          "div",
+          { class: "tl-legend" },
+          Object.entries(stageText).map(([stage, text]) =>
+            el(
+              "span",
+              {},
+              el("span", { class: `swatch stage-${stage}` }),
+              text,
+            ),
+          ),
+          el("span", {}, "Vạch đỏ: hôm nay · nét đứt: chưa có hạn"),
+        );
+        const scroll = el("div", { class: "tl-scroll" }, chart);
+        view.append(
+          legend,
+          timeline.groups.length || timeline.ungrouped.length
+            ? scroll
+            : el(
+                "p",
+                { class: "tl-empty" },
+                "Chưa có milestone nào. Tạo milestone trên GitHub (Issues → Milestones), rồi chọn milestone cho feature trong board.",
+              ),
+        );
+        // The today line sits after the label column, which CSS sizes.
+        const label = chart.querySelector(".tl-label").offsetWidth;
+        today.style.left = `${label + x(timeline.today)}px`;
+        chart.style.width = `${label + width}px`;
+        if (!state.timelineScrolled) {
+          state.timelineScrolled = true;
+          // Today in the middle of the part the sticky labels leave visible.
+          scroll.scrollLeft = Math.max(
+            0,
+            x(timeline.today) - (scroll.clientWidth - label) / 2,
+          );
+        }
+      }
+
+      async function loadTimeline() {
+        renderTimeline();
+        try {
+          const [timeline] = await Promise.all([
+            call("/api/timeline"),
+            state.data ? null : load(false, false),
+          ]);
+          state.timeline = timeline;
+          document.title = `Timeline · ${timeline.project}`;
+          if (viewOf() === "timeline") renderTimeline();
+        } catch (e) {
+          if (e.message !== "Cần đăng nhập")
+            app.replaceChildren(
+              header("timeline"),
+              el("p", { class: "error", style: "padding:16px" }, e.message),
+            );
+        }
+      }
+
+      const viewOf = () =>
+        location.hash === "#timeline" ? "timeline" : "board";
+
+      // Loads the board's data. On the Timeline tab it only keeps the data, and a
+      // fresh load (after a decision or ↻) reloads the timeline too.
+      async function load(fresh = false, show = true) {
         try {
           state.data = await call(`/api/board${fresh ? "?fresh=1" : ""}`);
+          if (!show) return;
+          if (viewOf() === "timeline") {
+            if (fresh) loadTimeline();
+            return;
+          }
           document.title = `Board · ${state.data.project}`;
           render();
         } catch (e) {
-          if (e.message !== "Cần đăng nhập")
+          if (e.message !== "Cần đăng nhập" && show && viewOf() === "board")
             app.replaceChildren(
               el("p", { class: "error", style: "padding:16px" }, e.message),
             );
@@ -2048,7 +2675,13 @@
       function start() {
         const run = sessionRun();
         if (run) showSession(run);
-        else load();
+        else if (viewOf() === "timeline") {
+          state.timelineScrolled = false;
+          loadTimeline();
+        } else {
+          if (state.data) render();
+          load();
+        }
       }
 
       window.addEventListener("hashchange", start);
